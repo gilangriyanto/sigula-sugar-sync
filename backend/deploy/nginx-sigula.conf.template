@@ -1,0 +1,89 @@
+# ---------------------------------------------------------------------------
+# SIGULA API — virtual host Nginx
+#
+# Placeholder diisi otomatis oleh setup-app.sh:
+#   __DOMAIN__      -> nama domain, mis. api.nirasarimurni.com
+#   __ROOT__        -> /var/www/<domain>/backend/public
+#   __PHP_SOCKET__  -> /run/php/php8.3-fpm.sock
+#
+# Setelah `certbot --nginx -d <domain>` dijalankan, Certbot akan menambahkan
+# blok listen 443 + redirect HTTP->HTTPS ke file ini secara otomatis.
+# ---------------------------------------------------------------------------
+
+server {
+    listen 80;
+    listen [::]:80;
+
+    server_name __DOMAIN__;
+    root __ROOT__;
+
+    index index.php;
+    charset utf-8;
+
+    # Ukuran maksimal request (samakan dengan post_max_size di php.ini)
+    client_max_body_size 20M;
+
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    # Kompresi respons JSON — berpengaruh besar pada endpoint berpaginasi.
+    gzip on;
+    gzip_types application/json application/javascript text/css text/plain;
+    gzip_min_length 1024;
+
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location = /favicon.ico { access_log off; log_not_found off; }
+    location = /robots.txt  { access_log off; log_not_found off; }
+
+    error_page 404 /index.php;
+
+    location ~ \.php$ {
+        # try_files WAJIB ada: tanpa ini Nginx bisa mengeksekusi file yang
+        # sebenarnya tidak ada (celah path-info injection).
+        try_files $uri =404;
+
+        fastcgi_pass unix:__PHP_SOCKET__;
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+        fastcgi_param DOCUMENT_ROOT $realpath_root;
+        include fastcgi_params;
+
+        fastcgi_read_timeout 120;
+        fastcgi_buffers 16 16k;
+        fastcgi_buffer_size 32k;
+    }
+
+    # Blokir akses ke file tersembunyi (.env, .git, dsb) kecuali ACME challenge
+    location ~ /\.(?!well-known).* {
+        deny all;
+    }
+
+    access_log /var/log/nginx/__DOMAIN__-access.log;
+    error_log  /var/log/nginx/__DOMAIN__-error.log;
+}
+
+# ---------------------------------------------------------------------------
+# OPSIONAL — menyajikan frontend React di domain terpisah pada server yang sama.
+# Build frontend (`npm run build`) lalu salin hasilnya ke /var/www/frontend.
+# Aktifkan dengan menyalin blok ini ke /etc/nginx/sites-available/<domain-web>.
+# ---------------------------------------------------------------------------
+# server {
+#     listen 80;
+#     server_name nirasarimurni.com www.nirasarimurni.com;
+#     root /var/www/frontend;
+#     index index.html;
+#
+#     # SPA: semua route yang tidak cocok file dikembalikan ke index.html
+#     location / {
+#         try_files $uri $uri/ /index.html;
+#     }
+#
+#     location ~* \.(js|css|png|jpg|jpeg|gif|svg|woff2?)$ {
+#         expires 1y;
+#         add_header Cache-Control "public, immutable";
+#     }
+# }
