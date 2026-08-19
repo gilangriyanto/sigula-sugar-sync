@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { BarChart3, Lock, Mail } from "lucide-react";
+import { BarChart3, Loader2, Lock, Mail } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ApiError } from "@/lib/api-client";
+import { useAuth } from "@/store/auth-store";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -27,19 +29,33 @@ export const Route = createFileRoute("/")({
 
 function LoginPage() {
   const navigate = useNavigate();
-  const [email, setEmail] = useState("admin@nirasarimurni.co.id");
-  const [password, setPassword] = useState("demo1234");
+  const { login } = useAuth();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.trim() || !password.trim()) {
       setError("Email dan password wajib diisi.");
       return;
     }
     setError("");
-    toast.success("Berhasil masuk", { description: "Selamat datang kembali, Budi Santoso." });
-    navigate({ to: "/dashboard" });
+    setLoading(true);
+    try {
+      await login({ email: email.trim(), password, namaPerangkat: "sigula-web" });
+      toast.success("Berhasil masuk", { description: "Selamat datang kembali." });
+      navigate({ to: "/dashboard" });
+    } catch (err) {
+      const message =
+        err instanceof ApiError
+          ? (err.firstFieldError ?? err.message)
+          : "Tidak bisa terhubung ke server. Coba lagi.";
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -76,6 +92,8 @@ function LoginPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="nama@perusahaan.co.id"
+                  disabled={loading}
+                  autoComplete="username"
                 />
               </div>
             </div>
@@ -90,22 +108,19 @@ function LoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
+                  disabled={loading}
+                  autoComplete="current-password"
                 />
               </div>
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
-            <Button type="submit" className="w-full" size="lg">
+            <Button type="submit" className="w-full" size="lg" disabled={loading}>
+              {loading && <Loader2 className="size-4 animate-spin" />}
               Masuk
             </Button>
           </div>
-          <p className="mt-4 text-center text-xs text-muted-foreground">
-            Mode demo — kredensial apa pun akan diterima.
-          </p>
         </form>
       </div>
-      <span className="absolute right-4 top-4 rounded-full bg-warning px-2.5 py-1 text-[10px] font-bold tracking-wider text-warning-foreground">
-        DEMO
-      </span>
     </div>
   );
 }

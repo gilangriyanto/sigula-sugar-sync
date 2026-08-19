@@ -10,8 +10,14 @@ return [
     |--------------------------------------------------------------------------
     |
     | Frontend SIGULA (React/Vite) berjalan di origin yang berbeda dengan API,
-    | jadi origin-nya didaftarkan lewat env FRONTEND_URL (bisa lebih dari satu,
-    | dipisah koma). Hindari '*' di production.
+    | jadi origin-nya didaftarkan lewat env (bisa lebih dari satu, dipisah
+    | koma). Hindari '*' di production.
+    |
+    | - FRONTEND_URL           origin utama (mis. domain production).
+    | - CORS_ALLOWED_ORIGINS   origin tambahan, opsional — dipakai untuk origin
+    |                          dev lokal (mis. http://localhost:8080) tanpa
+    |                          perlu mengubah FRONTEND_URL. Kosongkan di
+    |                          production.
     |
     */
 
@@ -19,10 +25,13 @@ return [
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => array_values(array_filter(array_map(
+    'allowed_origins' => array_values(array_unique(array_filter(array_map(
         'trim',
-        explode(',', (string) env('FRONTEND_URL', 'http://localhost:3000,http://localhost:5173,http://localhost:8080'))
-    ))),
+        array_merge(
+            explode(',', (string) env('FRONTEND_URL', 'http://localhost:3000,http://localhost:5173,http://localhost:8080')),
+            explode(',', (string) env('CORS_ALLOWED_ORIGINS', ''))
+        )
+    )))),
 
     'allowed_origins_patterns' => [],
 

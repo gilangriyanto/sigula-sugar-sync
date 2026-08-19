@@ -12,6 +12,7 @@ import { useEffect, type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { SigulaProvider } from "../store/sigula-store";
+import { AuthProvider } from "../store/auth-store";
 import { Toaster } from "../components/ui/sonner";
 
 function NotFoundComponent() {
@@ -128,11 +129,13 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <SigulaProvider>
-        {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-        <Outlet />
-        <Toaster />
-      </SigulaProvider>
+      <AuthProvider>
+        <SigulaProvider>
+          {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+          <Outlet />
+          <Toaster />
+        </SigulaProvider>
+      </AuthProvider>
     </QueryClientProvider>
   );
 }

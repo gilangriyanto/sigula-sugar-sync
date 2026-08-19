@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from "react";
-import { Link, useLocation } from "@tanstack/react-router";
+import { useMemo, useState, type ReactNode } from "react";
+import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import {
   BarChart3,
   Boxes,
@@ -17,27 +17,46 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/store/auth-store";
 
 const MENU = [
-  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/petani", label: "Data Petani", icon: Sprout },
-  { to: "/master", label: "Master Harga & Tarif", icon: Tags },
-  { to: "/pembelian", label: "Pembelian Bahan", icon: ShoppingCart },
-  { to: "/stok", label: "Manajemen Stok", icon: Boxes },
-  { to: "/produksi", label: "Produksi (Sesi Tungku)", icon: Factory },
-  { to: "/penggajian", label: "Penggajian", icon: Users },
-  { to: "/penjualan", label: "Penjualan", icon: TrendingUp },
-  { to: "/keuangan", label: "Keuangan", icon: Wallet },
+  { key: "dashboard", to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { key: "petani", to: "/petani", label: "Data Petani", icon: Sprout },
+  { key: "master", to: "/master", label: "Master Harga & Tarif", icon: Tags },
+  { key: "pembelian", to: "/pembelian", label: "Pembelian Bahan", icon: ShoppingCart },
+  { key: "stok", to: "/stok", label: "Manajemen Stok", icon: Boxes },
+  { key: "produksi", to: "/produksi", label: "Produksi (Sesi Tungku)", icon: Factory },
+  { key: "penggajian", to: "/penggajian", label: "Penggajian", icon: Users },
+  { key: "penjualan", to: "/penjualan", label: "Penjualan", icon: TrendingUp },
+  { key: "keuangan", to: "/keuangan", label: "Keuangan", icon: Wallet },
 ] as const;
+
+function initials(nama: string): string {
+  const parts = nama.trim().split(/\s+/);
+  return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase() || "?";
+}
 
 export function AppShell({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const { pathname } = useLocation();
+  const navigate = useNavigate();
+  const { user, logout } = useAuth();
+
+  // Sidebar hanya menampilkan menu yang diizinkan role user, sesuai `menu` dari /auth/me.
+  const allowedMenu = useMemo(
+    () => MENU.filter((m) => user?.menu.includes(m.key)),
+    [user],
+  );
+
+  const handleLogout = async () => {
+    await logout();
+    navigate({ to: "/" });
+  };
 
   const nav = (
     <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-3">
-      {MENU.map((m) => {
+      {allowedMenu.map((m) => {
         const active = pathname === m.to;
         const Icon = m.icon;
         return (
@@ -126,20 +145,15 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <span className="rounded-full bg-warning px-2.5 py-1 text-[10px] font-bold tracking-wider text-warning-foreground">
-              DEMO
-            </span>
             <div className="hidden text-right sm:block">
-              <p className="text-sm font-medium leading-tight">Budi Santoso</p>
-              <p className="text-xs text-muted-foreground">Admin Operasional</p>
+              <p className="text-sm font-medium leading-tight">{user?.nama ?? "-"}</p>
+              <p className="text-xs text-muted-foreground">{user?.roleLabel ?? "-"}</p>
             </div>
             <span className="flex size-9 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">
-              BS
+              {user ? initials(user.nama) : "?"}
             </span>
-            <Button asChild variant="ghost" size="icon" aria-label="Keluar">
-              <Link to="/">
-                <LogOut className="size-4" />
-              </Link>
+            <Button variant="ghost" size="icon" aria-label="Keluar" onClick={handleLogout}>
+              <LogOut className="size-4" />
             </Button>
           </div>
         </header>
