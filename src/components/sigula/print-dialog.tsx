@@ -1,7 +1,13 @@
 import type { ReactNode } from "react";
 import { Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 export function PrintDialog({
   open,
@@ -45,7 +51,15 @@ export function PrintDialog({
   );
 }
 
-export function PrintRow({ label, value, strong }: { label: string; value: ReactNode; strong?: boolean }) {
+export function PrintRow({
+  label,
+  value,
+  strong,
+}: {
+  label: string;
+  value: ReactNode;
+  strong?: boolean;
+}) {
   return (
     <div className={`flex justify-between gap-4 py-1 ${strong ? "font-semibold" : ""}`}>
       <span className="text-muted-foreground">{label}</span>

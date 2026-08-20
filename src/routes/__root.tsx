@@ -11,7 +11,6 @@ import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
-import { SigulaProvider } from "../store/sigula-store";
 import { AuthProvider } from "../store/auth-store";
 import { Toaster } from "../components/ui/sonner";
 
@@ -47,7 +46,9 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="max-w-md text-center">
-        <h1 className="text-xl font-semibold tracking-tight text-foreground">Halaman gagal dimuat</h1>
+        <h1 className="text-xl font-semibold tracking-tight text-foreground">
+          Halaman gagal dimuat
+        </h1>
         <p className="mt-2 text-sm text-muted-foreground">
           Terjadi kesalahan. Coba muat ulang atau kembali ke halaman awal.
         </p>
@@ -88,7 +89,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { property: "og:title", content: "SIGULA — Sistem Informasi Gula Terintegrasi" },
       {
         property: "og:description",
-        content: "Dashboard terintegrasi pengadaan gula: petani, produksi tungku, penggajian, hingga laba rugi.",
+        content:
+          "Dashboard terintegrasi pengadaan gula: petani, produksi tungku, penggajian, hingga laba rugi.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -130,11 +132,9 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <SigulaProvider>
-          {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-          <Outlet />
-          <Toaster />
-        </SigulaProvider>
+        {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+        <Outlet />
+        <Toaster />
       </AuthProvider>
     </QueryClientProvider>
   );

@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   DataTable,
   EmptyState,
@@ -24,8 +30,9 @@ import {
   type Column,
 } from "@/components/sigula/ui-bits";
 import { angka, rupiah } from "@/lib/format";
-import type { Petani } from "@/lib/sigula-types";
-import { useSigula } from "@/store/sigula-store";
+import { ApiError } from "@/lib/api-client";
+import type { Petani, PetaniPayload } from "@/lib/api/petani";
+import { useHapusPetani, usePetaniList, useTambahPetani, useUbahPetani } from "@/hooks/use-petani";
 
 export const Route = createFileRoute("/_app/petani")({
   head: () => ({
@@ -37,7 +44,10 @@ export const Route = createFileRoute("/_app/petani")({
           "Kelola data petani mitra PT Nira Sari Murni: status member, nomor member, kontak, alamat, dan total transaksi pembelian bahan.",
       },
       { property: "og:title", content: "Data Petani — SIGULA" },
-      { property: "og:description", content: "Database petani mitra beserta riwayat nilai transaksi." },
+      {
+        property: "og:description",
+        content: "Database petani mitra beserta riwayat nilai transaksi.",
+      },
     ],
   }),
   component: PetaniPage,
@@ -46,7 +56,6 @@ export const Route = createFileRoute("/_app/petani")({
 interface FormState {
   nama: string;
   status: "Member" | "Non-Member";
-  nomorMember: string;
   kontak: string;
   alamat: string;
 }
@@ -54,91 +63,97 @@ interface FormState {
 const emptyForm: FormState = {
   nama: "",
   status: "Member",
-  nomorMember: "",
   kontak: "",
   alamat: "",
 };
 
+function apiErrorMessage(err: unknown, fallback: string): string {
+  return err instanceof ApiError ? (err.firstFieldError ?? err.message) : fallback;
+}
+
+function LoadingRow() {
+  return (
+    <div className="flex items-center justify-center gap-2 px-4 py-14 text-sm text-muted-foreground">
+      <Loader2 className="size-4 animate-spin" /> Memuat data…
+    </div>
+  );
+}
+
 function PetaniPage() {
-  const { state, addPetani, updatePetani, deletePetani } = useSigula();
   const [q, setQ] = useState("");
+  const [qDebounced, setQDebounced] = useState("");
+
+  useEffect(() => {
+    const t = setTimeout(() => setQDebounced(q.trim()), 300);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  const { data: rows = [], isLoading, isError } = usePetaniList({ q: qDebounced || undefined });
+  const tambahPetani = useTambahPetani();
+  const ubahPetani = useUbahPetani();
+  const hapusPetani = useHapusPetani();
+
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Petani | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [err, setErr] = useState<string | null>(null);
 
-  const generateNomor = () => {
-    const used = state.petani.map((p) => Number(p.nomorMember)).filter((n) => !Number.isNaN(n) && n > 0);
-    const next = (used.length ? Math.max(...used) : 200) + 1;
-    return String(Math.min(999, next)).padStart(3, "0");
-  };
-
-  const totalTransaksi = useMemo(() => {
-    const map = new Map<string, { nilai: number; jumlah: number }>();
-    state.pembelian.forEach((p) => {
-      const cur = map.get(p.petaniId) ?? { nilai: 0, jumlah: 0 };
-      cur.nilai += p.total;
-      cur.jumlah += 1;
-      map.set(p.petaniId, cur);
-    });
-    return map;
-  }, [state.pembelian]);
-
-  const rows = useMemo(() => {
-    const term = q.trim().toLowerCase();
-    if (!term) return state.petani;
-    return state.petani.filter(
-      (p) => p.nama.toLowerCase().includes(term) || p.nomorMember.includes(term),
-    );
-  }, [state.petani, q]);
-
   const openTambah = () => {
     setEditing(null);
-    setForm({ ...emptyForm, nomorMember: generateNomor() });
+    setForm(emptyForm);
     setErr(null);
     setOpen(true);
   };
 
   const openEdit = (p: Petani) => {
     setEditing(p);
-    setForm({
-      nama: p.nama,
-      status: p.status,
-      nomorMember: p.nomorMember || generateNomor(),
-      kontak: p.kontak,
-      alamat: p.alamat,
-    });
+    setForm({ nama: p.nama, status: p.status, kontak: p.kontak, alamat: p.alamat });
     setErr(null);
     setOpen(true);
   };
 
-  const simpan = () => {
+  const simpan = async () => {
     if (!form.nama.trim()) return setErr("Nama petani wajib diisi.");
-    if (!form.kontak.trim()) return setErr("Kontak wajib diisi.");
-    const payload = {
+    const payload: PetaniPayload = {
       nama: form.nama.trim(),
       status: form.status,
-      nomorMember: form.status === "Member" ? form.nomorMember : "",
-      kontak: form.kontak.trim(),
-      alamat: form.alamat.trim(),
+      kontak: form.kontak.trim() || undefined,
+      alamat: form.alamat.trim() || undefined,
     };
-    if (editing) {
-      updatePetani(editing.id, payload);
-      toast.success("Data petani diperbarui", { description: payload.nama });
-    } else {
-      addPetani(payload);
-      toast.success("Petani baru ditambahkan", { description: payload.nama });
+    try {
+      if (editing) {
+        await ubahPetani.mutateAsync({ id: editing.id, payload });
+        toast.success("Data petani diperbarui", { description: payload.nama });
+      } else {
+        await tambahPetani.mutateAsync(payload);
+        toast.success("Petani baru ditambahkan", { description: payload.nama });
+      }
+      setOpen(false);
+    } catch (e) {
+      setErr(
+        apiErrorMessage(e, editing ? "Gagal mengubah data petani." : "Gagal menambah petani."),
+      );
     }
-    setOpen(false);
   };
 
-  const hapus = (p: Petani) => {
-    deletePetani(p.id);
-    toast.success("Data petani dihapus", { description: p.nama });
+  const hapus = async (p: Petani) => {
+    try {
+      await hapusPetani.mutateAsync(p.id);
+      toast.success("Data petani dihapus", { description: p.nama });
+    } catch (e) {
+      toast.error(apiErrorMessage(e, "Gagal menghapus petani."));
+    }
   };
+
+  const saving = tambahPetani.isPending || ubahPetani.isPending;
 
   const cols: Column<Petani>[] = [
-    { key: "nama", header: "Nama", sortValue: (r) => r.nama, cell: (r) => <span className="font-medium">{r.nama}</span> },
+    {
+      key: "nama",
+      header: "Nama",
+      sortValue: (r) => r.nama,
+      cell: (r) => <span className="font-medium">{r.nama}</span>,
+    },
     {
       key: "status",
       header: "Status",
@@ -153,24 +168,26 @@ function PetaniPage() {
     {
       key: "nomor",
       header: "Nomor Member",
-      cell: (r) => (r.nomorMember ? `Petani ${r.nomorMember}` : <span className="text-muted-foreground">—</span>),
+      cell: (r) =>
+        r.labelMember ? r.labelMember : <span className="text-muted-foreground">—</span>,
     },
-    { key: "kontak", header: "Kontak", cell: (r) => r.kontak },
-    { key: "alamat", header: "Alamat", cell: (r) => <span className="text-muted-foreground">{r.alamat}</span> },
+    { key: "kontak", header: "Kontak", cell: (r) => r.kontak || "-" },
+    {
+      key: "alamat",
+      header: "Alamat",
+      cell: (r) => <span className="text-muted-foreground">{r.alamat || "-"}</span>,
+    },
     {
       key: "trx",
       header: "Total Transaksi",
       align: "right",
-      sortValue: (r) => totalTransaksi.get(r.id)?.nilai ?? 0,
-      cell: (r) => {
-        const t = totalTransaksi.get(r.id);
-        return (
-          <div>
-            <p className="font-medium">{rupiah(t?.nilai ?? 0)}</p>
-            <p className="text-xs text-muted-foreground">{angka(t?.jumlah ?? 0)} transaksi</p>
-          </div>
-        );
-      },
+      sortValue: (r) => r.totalNilai,
+      cell: (r) => (
+        <div>
+          <p className="font-medium">{rupiah(r.totalNilai)}</p>
+          <p className="text-xs text-muted-foreground">{angka(r.totalTransaksi)} transaksi</p>
+        </div>
+      ),
     },
     {
       key: "aksi",
@@ -193,7 +210,7 @@ function PetaniPage() {
     <>
       <PageHeader
         title="Data Petani"
-        subtitle={`${state.petani.length} petani mitra terdaftar`}
+        subtitle={isLoading ? "Memuat…" : `${rows.length} petani mitra terdaftar`}
         action={
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
@@ -221,11 +238,7 @@ function PetaniPage() {
                     <Select
                       value={form.status}
                       onValueChange={(v: "Member" | "Non-Member") =>
-                        setForm({
-                          ...form,
-                          status: v,
-                          nomorMember: v === "Member" ? form.nomorMember || generateNomor() : "",
-                        })
+                        setForm({ ...form, status: v })
                       }
                     >
                       <SelectTrigger>
@@ -239,9 +252,10 @@ function PetaniPage() {
                   </div>
                   {form.status === "Member" && (
                     <div className="space-y-2">
-                      <Label htmlFor="nomor">Nomor Member</Label>
-                      <Input id="nomor" value={form.nomorMember} readOnly className="bg-muted" />
-                      <p className="text-xs text-muted-foreground">Otomatis: Petani {form.nomorMember}</p>
+                      <Label>Nomor Member</Label>
+                      <div className="flex h-9 items-center rounded-md border bg-muted px-3 text-sm text-muted-foreground">
+                        {editing?.labelMember || "Dibuat otomatis saat disimpan"}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -269,7 +283,10 @@ function PetaniPage() {
                 <Button variant="outline" onClick={() => setOpen(false)}>
                   Batal
                 </Button>
-                <Button onClick={simpan}>Simpan</Button>
+                <Button onClick={simpan} disabled={saving}>
+                  {saving && <Loader2 className="size-4 animate-spin" />}
+                  Simpan
+                </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
@@ -279,25 +296,38 @@ function PetaniPage() {
       <Card className="overflow-hidden shadow-card">
         <CardContent className="space-y-4 px-0 py-4">
           <div className="px-4">
-            <SearchInput value={q} onChange={setQ} placeholder="Cari nama atau nomor member..." />
+            <SearchInput
+              value={q}
+              onChange={setQ}
+              placeholder="Cari nama, nomor member, atau kontak..."
+            />
           </div>
-          <DataTable
-            rows={rows}
-            columns={cols}
-            rowKey={(r) => r.id}
-            initialSort={{ key: "nama", dir: "asc" }}
-            empty={
-              <EmptyState
-                title="Petani tidak ditemukan"
-                description="Coba kata kunci lain, atau tambahkan petani baru."
-                action={
-                  <Button onClick={openTambah}>
-                    <Plus className="mr-2 size-4" /> Tambah Petani
-                  </Button>
-                }
-              />
-            }
-          />
+          {isError && (
+            <p className="px-4 text-sm text-destructive">
+              Gagal memuat data petani. Coba muat ulang halaman.
+            </p>
+          )}
+          {isLoading ? (
+            <LoadingRow />
+          ) : (
+            <DataTable
+              rows={rows}
+              columns={cols}
+              rowKey={(r) => r.id}
+              initialSort={{ key: "nama", dir: "asc" }}
+              empty={
+                <EmptyState
+                  title="Petani tidak ditemukan"
+                  description="Coba kata kunci lain, atau tambahkan petani baru."
+                  action={
+                    <Button onClick={openTambah}>
+                      <Plus className="mr-2 size-4" /> Tambah Petani
+                    </Button>
+                  }
+                />
+              }
+            />
+          )}
         </CardContent>
       </Card>
     </>
