@@ -1,6 +1,9 @@
 # SIGULA API v1 — Referensi Endpoint
 
 > Ingin langsung mencoba? Import [`SIGULA.postman_collection.json`](SIGULA.postman_collection.json)
+> + [`SIGULA.postman_environment.json`](SIGULA.postman_environment.json) ke Postman —
+> seluruh 58 endpoint di dokumen ini sudah tersedia sebagai request siap jalan, lengkap
+> dengan auto-simpan token setelah Login.
 >
 > - [`SIGULA.postman_environment.json`](SIGULA.postman_environment.json) ke Postman —
 >   seluruh 50 endpoint di dokumen ini sudah tersedia sebagai request siap jalan, lengkap
@@ -593,3 +596,234 @@ Deret bulanan `{ bulan, label, pendapatan, pembelian, gaji, biayaOperasional, to
 Khusus Owner. Filter: `aksi` (prefix, mis. `harga.`), `userId`, `dari`, `sampai`.
 Mencatat perubahan harga, tarif, transaksi pembelian/penjualan, produksi, stok opname,
 dan pembayaran gaji — lengkap dengan pelaku, waktu, dan IP.
+
+---
+
+## 11. Export Laporan (CSV)
+
+Tujuh endpoint export, masing-masing memakai filter yang sama dengan halaman
+daftarnya dan tunduk pada gate modulnya — staff gudang tidak bisa mengekspor
+laporan keuangan maupun penggajian.
+
+| Endpoint | Isi | Hak akses |
+|---|---|---|
+| `GET /keuangan/laba-rugi/export` | Ringkasan laba rugi | `lihat-keuangan` |
+| `GET /keuangan/biaya/export` | Rincian biaya operasional | `lihat-keuangan` |
+| `GET /pembelian/export` | Rincian pembelian bahan | `lihat-pembelian` |
+| `GET /penjualan/export` | Invoice, kristal & brondol terpisah | `lihat-penjualan` |
+| `GET /produksi/sesi/export` | Rincian per sesi tungku | `lihat-produksi` |
+| `GET /penggajian/export` | Rekap gaji Senin–Jumat | `lihat-penggajian` |
+| `GET /stok/kartu/export` | Histori mutasi stok | `lihat-stok` |
+
+### Parameter
+
+Semua endpoint (kecuali penggajian) menerima parameter periode yang sama dengan
+laporan laba rugi:
+
+| Parameter | Nilai |
+|---|---|
+| `periode` | `bulan_ini` (default) · `bulan_lalu` · `custom` |
+| `dari`, `sampai` | `YYYY-MM-DD`, wajib bila `periode=custom` |
+
+Filter tambahan per endpoint:
+
+| Endpoint | Filter |
+|---|---|
+| `/pembelian/export` | `grade`, `petaniId` |
+| `/penjualan/export` | `eksportirId` |
+| `/produksi/sesi/export` | `status` |
+| `/stok/kartu/export` | `kategori`, `jenis` |
+| `/keuangan/biaya/export` | `kategori` |
+| `/penggajian/export` | `tanggal` — tanggal mana saja dalam minggu yang dimaksud |
+
+### Parameter `format`
+
+| Nilai | Hasil | Content-Type |
+|---|---|---|
+| `csv` (default) | CSV siap Excel | `text/csv; charset=UTF-8` |
+| `xlsx` | Excel asli, angka tersimpan sebagai **angka** (bisa di-SUM/pivot), header berwarna, kolom auto-width, freeze pane | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` |
+| `pdf` | PDF berkop perusahaan, landscape otomatis untuk laporan >6 kolom | `application/pdf` |
+
+```
+GET /keuangan/laba-rugi/export?format=xlsx
+GET /produksi/sesi/export?periode=bulan_lalu&format=pdf
+```
+
+Nama file mengikuti format: `laba-rugi_2026-08-01_sd_2026-08-31.xlsx`.
+
+> PDF dibatasi **3.000 baris** — Dompdf menyusun seluruh dokumen di memori.
+> Bila terpotong, keterangan dicetak di bawah tabel. Untuk data penuh gunakan
+> `xlsx` atau `csv`.
+
+### Format file (CSV)
+
+Respons berupa **streamed download** `text/csv`, bukan JSON:
+
+```
+Content-Type: text/csv; charset=UTF-8
+Content-Disposition: attachment; filename="laba-rugi_2026-08-01_sd_2026-08-31.csv"
+```
+
+Formatnya disesuaikan untuk Excel berlokal Indonesia:
+
+- pemisah kolom **titik koma** (`;`) — list separator locale id-ID
+- desimal **koma** tanpa pemisah ribuan (`1450000,00`), supaya terbaca sebagai
+  angka, bukan teks
+- diawali **BOM UTF-8** agar huruf beraksen tidak rusak
+- empat baris kepala (nama perusahaan, judul laporan, periode, tanggal ekspor)
+  sebelum baris header tabel
+- laporan berbentuk daftar diakhiri baris **TOTAL**
+
+Contoh isi `/keuangan/laba-rugi/export`:
+
+```csv
+PT Nira Sari Murni
+LAPORAN LABA RUGI
+Periode: 1 Agustus 2026 s.d. 31 Agustus 2026
+Diekspor: 19 Agustus 2026
+
+Keterangan;Jumlah (Rp)
+Pendapatan Penjualan;2290000,00
+
+HPP — Pembelian Bahan Baku;1450000,00
+HPP — Upah Gula Kristal;92000,00
+HPP — Upah Gula Brondol;16000,00
+HPP — Uang Makan;10000,00
+HPP — Total Gaji Karyawan;118000,00
+HPP — TOTAL;1568000,00
+
+Biaya Operasional Lain-lain;500000,00
+
+LABA BERSIH;222000,00
+Margin (%);9,69
+```
+
+Baris dikirim lewat generator dan di-stream, jadi export ribuan transaksi tidak
+menahan seluruh data di memori.
+
+### Memanggil dari frontend
+
+Karena responsnya file (bukan JSON), unduhannya dipicu lewat blob:
+
+```ts
+const res = await fetch(`${BASE}/keuangan/laba-rugi/export?periode=bulan_ini`, {
+  headers: { Authorization: `Bearer ${token.get()}` },
+});
+
+if (!res.ok) throw new Error("Gagal mengunduh laporan.");
+
+// Nama file diambil dari Content-Disposition (header ini sudah di-expose via CORS)
+const disposisi = res.headers.get("Content-Disposition") ?? "";
+const namaFile = disposisi.match(/filename="?([^"]+)"?/)?.[1] ?? "laporan.csv";
+
+const blob = await res.blob();
+const url = URL.createObjectURL(blob);
+const a = document.createElement("a");
+a.href = url;
+a.download = namaFile;
+a.click();
+URL.revokeObjectURL(url);
+```
+
+> Tautan `<a href>` biasa tidak bisa dipakai karena endpoint butuh header
+> `Authorization`; browser tidak mengirimkannya pada navigasi biasa.
+
+### Audit
+
+Setiap export tercatat di audit log dengan aksi `laporan.export`, lengkap dengan
+pelaku, jenis laporan, dan filter yang dipakai — laporan memuat angka keuangan
+dan gaji, jadi jejaknya disimpan.
+
+
+---
+
+## 12. Ringkasan AI
+
+### `GET /keuangan/ringkasan-ai`
+
+Ringkasan naratif laporan yang ditulis model bahasa (Laravel AI SDK — Claude atau Gemini),
+untuk owner yang ingin membaca kesimpulan tanpa menafsirkan tabel sendiri.
+
+**Hak akses:** `lihat-keuangan` (Owner).
+
+| Parameter | Nilai |
+|---|---|
+| `periode` | `bulan_ini` (default) · `bulan_lalu` · `custom` |
+| `dari`, `sampai` | `YYYY-MM-DD`, wajib bila `periode=custom` |
+| `segarkan` | `1` untuk mengabaikan cache dan meminta ringkasan baru |
+
+```jsonc
+{ "data": {
+  "periode": { "dari": "2026-08-01", "sampai": "2026-08-31",
+               "label": "1 Agustus 2026 s.d. 31 Agustus 2026" },
+  "ringkasan": "**Ringkasan**\nPeriode ini perusahaan membukukan laba bersih ...",
+  "model": "claude-opus-5",
+  "dariCache": false,
+  "angka": { "labaRugi": { ... }, "tren": [ ... ], "stok": { ... }, "produksiTerakhir": { ... } } } }
+```
+
+`ringkasan` berformat Markdown dengan empat bagian tetap: **Ringkasan**,
+**Yang menonjol**, **Perlu diperhatikan**, dan **Saran**.
+
+### Angka tidak dihitung oleh model
+
+Seluruh angka diambil lebih dulu dari `LaporanService`, `ProduksiService`, dan
+`StokService` — data transaksi nyata — lalu dikirim sebagai fakta di dalam prompt.
+Model hanya menafsirkan dan menyusun kalimat; instruksinya melarang mengarang
+angka atau memakai pengetahuan umum tentang harga gula. Blok `angka` pada respons
+adalah data mentah yang sama, supaya frontend bisa menampilkan ringkasan
+berdampingan dengan angka aslinya dan hasilnya bisa diverifikasi.
+
+### Cache & biaya
+
+Hasil disimpan **30 menit** per rentang periode — membuka halaman berulang kali
+tidak memanggil model lagi. `dariCache` menandai apakah respons berasal dari cache.
+Pakai `?segarkan=1` untuk memaksa pemanggilan baru.
+
+### Bila belum dikonfigurasi
+
+Tanpa `ANTHROPIC_API_KEY`, endpoint membalas **503** dengan pesan yang bisa
+ditampilkan apa adanya ke pengguna — fitur lain tidak terpengaruh:
+
+```json
+{ "message": "Fitur ringkasan AI belum aktif. Isi ANTHROPIC_API_KEY pada .env server lalu jalankan `php artisan config:cache`.", "errors": {} }
+```
+
+Kegagalan pemanggilan model (jaringan, kuota, kunci tidak valid) dibalas **502**
+dengan pesan ringkas, dan detail teknisnya masuk ke `storage/logs`.
+
+### Konfigurasi & pilihan provider
+
+Fitur ini dibangun di atas **Laravel AI SDK**, jadi provider-nya bisa diganti
+**tanpa mengubah satu baris kode** — cukup `AI_PROVIDER` dan kunci APInya.
+
+**Claude (Anthropic)**
+
+```dotenv
+AI_PROVIDER=anthropic
+ANTHROPIC_API_KEY=sk-ant-...
+ANTHROPIC_MODEL=claude-opus-5
+```
+
+**Gemini (Google)**
+
+```dotenv
+AI_PROVIDER=gemini
+GEMINI_API_KEY=...
+GEMINI_MODEL=gemini-3.7-flash
+```
+
+Setelah mengubah `.env` di server, jalankan `php artisan config:cache`.
+
+Provider lain yang tersedia di `config/ai.php`: `openai`, `azure`, `bedrock`,
+`mistral`, `groq`, `deepseek`, `openrouter`, `ollama`, `xai`, `cohere`.
+Field `model` pada respons selalu melaporkan model yang benar-benar dipakai,
+jadi ketahuan kalau provider-nya salah setel.
+
+> Isi `ringkasan` ditulis oleh model, sehingga gaya dan kedalaman analisisnya
+> berbeda antar provider. Struktur 4 bagian dan larangan mengarang angka
+> ditegakkan lewat instruksi agent, bukan lewat provider tertentu.
+
+### Audit
+
+Setiap pembuatan ringkasan tercatat sebagai `laporan.ringkasan_ai` di audit log.

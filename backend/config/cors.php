@@ -37,7 +37,8 @@ return [
 
     'allowed_headers' => ['*'],
 
-    'exposed_headers' => [],
+    // Supaya frontend bisa membaca nama file dari respons export CSV.
+    'exposed_headers' => ['Content-Disposition'],
 
     'max_age' => 0,
 

@@ -1,4 +1,32 @@
 {
+  "info": {
+    "_postman_id": "5163d1a0-9b2c-4f7e-a1d3-si6ula20260813",
+    "name": "SIGULA API v1 — PT Nira Sari Murni",
+    "description": "Koleksi lengkap 58 endpoint SIGULA (Sistem Informasi Gula Terintegrasi).\n\n## Cara pakai\n\n1. Import file ini + `SIGULA.postman_environment.json`, pilih environment **SIGULA — Lokal**.\n2. Jalankan **Autentikasi → Login**. Token otomatis tersimpan ke variable `token`, jadi semua request lain langsung terautentikasi.\n3. Request bertanda ⭐ menyimpan id hasilnya ke collection variable (`petaniId`, `sesiId`, dst) sehingga folder bisa dijalankan berurutan lewat **Runner**.\n\nSeluruh koleksi aman dijalankan sekaligus lewat **Runner** — request Logout ditaruh di folder terakhir.\n\nVariable `{{tanggalHariIni}}` diisi otomatis (YYYY-MM-DD) oleh pre-request script koleksi, jadi contoh body selalu memakai tanggal hari ini.\n\n## Konvensi\n\n- Auth: `Authorization: Bearer <token>` (Sanctum), diatur di level koleksi.\n- Sukses: `{ \"data\": ..., \"message\": \"...\" }`. Endpoint transaksi berpaginasi menambah `meta`.\n- Error **422** (validasi maupun aturan bisnis) selalu sama bentuknya:\n  `{ \"message\": \"...\", \"errors\": { \"field\": [\"...\"] } }`\n- **401** token tidak valid · **403** role tidak berhak · **429** rate limit login (10/menit).\n- Enum menerima label (`\"NS 1\"`) maupun kode (`\"ns1\"`); response mengirim keduanya (`grade` + `gradeKode`).\n\n## Akun seeder\n\n| Email | Role |\n|---|---|\n| owner@nirasarimurni.com | Owner (semua modul) |\n| gudang@nirasarimurni.com | Staff Gudang (petani, pembelian, stok) |\n| produksi@nirasarimurni.com | Staff Produksi (sesi tungku) |\n\nPassword default: `password`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Mengisi {{tanggalHariIni}} supaya contoh body selalu memakai tanggal hari ini.",
+          "const d = new Date();",
+          "const pad = (n) => String(n).padStart(2, '0');",
+          "pm.collectionVariables.set('tanggalHariIni', `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);"
+        ]
+      }
     "info": {
         "_postman_id": "5163d1a0-9b2c-4f7e-a1d3-si6ula20260813",
         "name": "SIGULA API v1 — PT Nira Sari Murni",
@@ -342,6 +370,165 @@
             ]
         },
         {
+          "name": "Detail pembelian (+ data kwitansi)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/pembelian/{{pembelianId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pembelian",
+                "{{pembelianId}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Batalkan pembelian",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"alasan\": \"Salah input kilogram\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/pembelian/{{pembelianId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pembelian",
+                "{{pembelianId}}"
+              ]
+            },
+            "description": "Stok dikembalikan lewat **mutasi balik** (kartu stok tetap utuh sebagai audit trail), lalu record di-soft delete.\n\n**422** bila bahannya sudah terlanjur dipakai produksi sehingga stok tidak cukup untuk dikeluarkan."
+          },
+          "response": []
+        },
+        {
+          "name": "Export pembelian (CSV)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/csv"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/pembelian/export?periode=bulan_ini&dari=&sampai=&grade=&petaniId=&format=csv",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pembelian",
+                "export"
+              ],
+              "query": [
+                {
+                  "key": "periode",
+                  "value": "bulan_ini",
+                  "description": "bulan_ini (default) | bulan_lalu | custom"
+                },
+                {
+                  "key": "dari",
+                  "value": "",
+                  "description": "YYYY-MM-DD, wajib bila periode=custom"
+                },
+                {
+                  "key": "sampai",
+                  "value": "",
+                  "description": "YYYY-MM-DD, wajib bila periode=custom"
+                },
+                {
+                  "key": "grade",
+                  "value": "",
+                  "description": "ns1 | ns2 | kecap"
+                },
+                {
+                  "key": "petaniId",
+                  "value": "",
+                  "description": "Filter per petani"
+                },
+                {
+                  "key": "format",
+                  "value": "csv",
+                  "description": "csv (default) | xlsx | pdf"
+                }
+              ]
+            },
+            "description": "Rincian pembelian bahan + baris TOTAL kilogram dan rupiah.\n\n---\n**Format file** — atur lewat parameter `format`: `csv` (default), `xlsx` (Excel asli, angka bisa di-SUM), atau `pdf` (berkop perusahaan).\n\nCSV:\n\nCSV siap dibuka di Excel: pemisah kolom `;`, desimal koma (`1450000,00`), diawali BOM UTF-8. Nama file otomatis memuat rentang tanggal, mis. `laba-rugi_2026-08-01_sd_2026-08-31.csv`.\n\nDi Postman klik **Save Response -> Save to a file** untuk mengunduhnya.\n\nSetiap export tercatat di audit log (`laporan.export`)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "6. Manajemen Stok",
+      "item": [
+        {
+          "name": "Posisi stok",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/stok",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "stok"
+              ]
+            },
+            "description": "```json\n{ \"data\": {\n  \"saldo\": { \"NS 1\": 1886, \"NS 2\": 1978, \"Kecap\": 2014, \"Kristal\": 4075.2, \"Brondol\": 912.67 },\n  \"bahanMentah\": [ { \"kode\": \"ns1\", \"nama\": \"NS 1\", \"label\": \"Bahan Mentah NS 1\", \"saldo\": 1886, \"status\": \"aman\" } ],\n  \"totalBahanMentah\": 5878,\n  \"produkJadi\": [ { \"kode\": \"kristal\", \"saldo\": 4075.2, \"status\": \"aman\" } ],\n  \"ambangMenipis\": 1500\n} }\n```\n\n`status` = `menipis` bila stok bahan mentah di bawah `ambangMenipis` (indikator kuning di UI).\n\n`saldo` bentuknya sama dengan state `stok` di frontend."
+          },
+          "response": []
+        },
+        {
+          "name": "Kartu stok (histori keluar-masuk)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/stok/kartu?kategori=&jenis=&dari=&sampai=&q=&page=1&perPage=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "stok",
+                "kartu"
+              ],
+              "query": [
             "name": "4. Master Harga, Tarif, Karyawan & Eksportir",
             "item": [
                 {
@@ -524,6 +711,136 @@
                     "response": []
                 },
                 {
+                  "key": "perPage",
+                  "value": "50",
+                  "description": "Maks 200"
+                }
+              ]
+            },
+            "description": "Log append-only seluruh mutasi stok, lengkap dengan `saldoSetelah` untuk rekonsiliasi.\n\n```json\n{ \"data\": [ {\n  \"tanggal\": \"2026-08-13\", \"jenis\": \"Keluar\", \"kategori\": \"NS 1\",\n  \"kategoriLabel\": \"Bahan Mentah NS 1\", \"jumlah\": 100, \"saldoSetelah\": 2186,\n  \"keterangan\": \"Produksi tungku TGK-01\",\n  \"referensiTipe\": \"sesi_tungku\", \"referensiId\": \"1837\"\n} ] }\n```\n\n`referensiTipe`/`referensiId` menunjuk transaksi asal (`pembelian`, `sesi_tungku`, `penjualan`)."
+          },
+          "response": []
+        },
+        {
+          "name": "Stok opname (koreksi manual)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kategori\": \"NS 1\",\n  \"stokFisik\": 1850,\n  \"alasan\": \"Hasil hitung fisik gudang\",\n  \"tanggal\": \"{{tanggalHariIni}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/stok/opname",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "stok",
+                "opname"
+              ]
+            },
+            "description": "Kirim **jumlah fisik hasil hitung gudang**, bukan selisihnya — selisih dihitung sistem terhadap saldo berjalan lalu dicatat sebagai mutasi biasa di kartu stok (`Stok opname: <alasan>`).\n\nTidak ada jalur mengubah saldo tanpa jejak.\n\n| Field | Wajib |\n|---|---|\n| `kategori` | ya |\n| `stokFisik` | ya (≥ 0) |\n| `alasan` | ya |\n| `tanggal` | tidak (default hari ini) |\n\n**422** bila tidak ada selisih dengan stok sistem.\n\nRole: Owner atau Staff Gudang."
+          },
+          "response": []
+        },
+        {
+          "name": "Export kartu stok (CSV)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/csv"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/stok/kartu/export?periode=bulan_ini&dari=&sampai=&kategori=&jenis=&format=csv",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "stok",
+                "kartu",
+                "export"
+              ],
+              "query": [
+                {
+                  "key": "periode",
+                  "value": "bulan_ini",
+                  "description": "bulan_ini (default) | bulan_lalu | custom"
+                },
+                {
+                  "key": "dari",
+                  "value": "",
+                  "description": "YYYY-MM-DD, wajib bila periode=custom"
+                },
+                {
+                  "key": "sampai",
+                  "value": "",
+                  "description": "YYYY-MM-DD, wajib bila periode=custom"
+                },
+                {
+                  "key": "kategori",
+                  "value": "",
+                  "description": "Kategori stok / kategori biaya"
+                },
+                {
+                  "key": "jenis",
+                  "value": "",
+                  "description": "masuk | keluar"
+                },
+                {
+                  "key": "format",
+                  "value": "csv",
+                  "description": "csv (default) | xlsx | pdf"
+                }
+              ]
+            },
+            "description": "Histori mutasi stok lengkap dengan saldo setelah tiap transaksi.\n\n---\n**Format file** — atur lewat parameter `format`: `csv` (default), `xlsx` (Excel asli, angka bisa di-SUM), atau `pdf` (berkop perusahaan).\n\nCSV:\n\nCSV siap dibuka di Excel: pemisah kolom `;`, desimal koma (`1450000,00`), diawali BOM UTF-8. Nama file otomatis memuat rentang tanggal, mis. `laba-rugi_2026-08-01_sd_2026-08-31.csv`.\n\nDi Postman klik **Save Response -> Save to a file** untuk mengunduhnya.\n\nSetiap export tercatat di audit log (`laporan.export`)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "7. Produksi — Sesi Tungku",
+      "description": "Modul paling penting. 1 sesi = 1 tungku = tepat 2 karyawan. Kristal dan brondol keluar bersamaan dari satu kali masak (brondol bukan sesi terpisah). Banyak tungku berjalan paralel dalam satu hari.",
+      "item": [
+        {
+          "name": "Daftar sesi tungku",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/produksi/sesi?tanggal=&dari=&sampai=&status=&grade=&karyawanId=&q=&page=1&perPage=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "produksi",
+                "sesi"
+              ],
+              "query": [
+                {
+                  "key": "tanggal",
+                  "value": "",
+                  "description": "Semua tungku yang jalan di 1 hari tertentu"
                     "name": "Ubah karyawan",
                     "request": {
                         "method": "PUT",
@@ -856,6 +1173,97 @@
                     "response": []
                 },
                 {
+                  "key": "sampai",
+                  "value": "",
+                  "description": "Tanggal akhir, default hari ini"
+                }
+              ]
+            },
+            "description": "Untuk grafik \"Tren Rendemen 14 Hari Terakhir\".\n\n```json\n{ \"data\": [ { \"tanggal\": \"2026-08-13\", \"kgBahan\": 1755, \"kgHasil\": 1201.37, \"rendemen\": 93.4 } ] }\n```"
+          },
+          "response": []
+        },
+        {
+          "name": "Export produksi (CSV)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/csv"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/produksi/sesi/export?periode=bulan_ini&dari=&sampai=&status=&format=csv",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "produksi",
+                "sesi",
+                "export"
+              ],
+              "query": [
+                {
+                  "key": "periode",
+                  "value": "bulan_ini",
+                  "description": "bulan_ini (default) | bulan_lalu | custom"
+                },
+                {
+                  "key": "dari",
+                  "value": "",
+                  "description": "YYYY-MM-DD, wajib bila periode=custom"
+                },
+                {
+                  "key": "sampai",
+                  "value": "",
+                  "description": "YYYY-MM-DD, wajib bila periode=custom"
+                },
+                {
+                  "key": "status",
+                  "value": "",
+                  "description": "sedang_diproses | selesai"
+                },
+                {
+                  "key": "format",
+                  "value": "csv",
+                  "description": "csv (default) | xlsx | pdf"
+                }
+              ]
+            },
+            "description": "Rincian per sesi tungku: grade, kg bahan, kedua karyawan, hasil, rendemen.\n\n---\n**Format file** — atur lewat parameter `format`: `csv` (default), `xlsx` (Excel asli, angka bisa di-SUM), atau `pdf` (berkop perusahaan).\n\nCSV:\n\nCSV siap dibuka di Excel: pemisah kolom `;`, desimal koma (`1450000,00`), diawali BOM UTF-8. Nama file otomatis memuat rentang tanggal, mis. `laba-rugi_2026-08-01_sd_2026-08-31.csv`.\n\nDi Postman klik **Save Response -> Save to a file** untuk mengunduhnya.\n\nSetiap export tercatat di audit log (`laporan.export`)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "8. Penggajian",
+      "description": "Periode gaji Senin s.d. JUMAT (bukan Senin-Minggu), dibayarkan setiap Jumat.",
+      "item": [
+        {
+          "name": "Rekap gaji mingguan",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/penggajian?tanggal={{tanggalHariIni}}&sertakanTanpaProduksi=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "penggajian"
+              ],
+              "query": [
+                {
+                  "key": "tanggal",
+                  "value": "{{tanggalHariIni}}",
+                  "description": "Tanggal MANA SAJA dalam minggu yang dimaksud — sistem mengunci ke periode Senin-Jumat. Kosong = minggu berjalan"
                     "name": "Kartu stok (histori keluar-masuk)",
                     "request": {
                         "method": "GET",
@@ -945,6 +1353,147 @@
             "description": "Modul paling penting. 1 sesi = 1 tungku = tepat 2 karyawan. Kristal dan brondol keluar bersamaan dari satu kali masak (brondol bukan sesi terpisah). Banyak tungku berjalan paralel dalam satu hari.",
             "item": [
                 {
+                  "key": "tanggal",
+                  "value": "{{tanggalHariIni}}",
+                  "description": "Tanggal dalam minggu yang dimaksud"
+                }
+              ]
+            },
+            "description": "Rincian lengkap satu karyawan untuk dicetak: periode, tarif yang dipakai, kg kristal, kg brondol, hari kerja, upah kristal, upah brondol, uang makan, total, dan status.\n\n**422** bila karyawan tidak punya catatan produksi pada periode itu."
+          },
+          "response": []
+        },
+        {
+          "name": "Bayar gaji 1 karyawan",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tanggal\": \"{{tanggalHariIni}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/penggajian/{{karyawanId}}/bayar",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "penggajian",
+                "{{karyawanId}}",
+                "bayar"
+              ]
+            },
+            "description": "Membekukan angka gaji periode tersebut sebagai snapshot lalu menandainya **Sudah Dibayar** (dengan timestamp & pelaku).\n\n**Idempoten** — memanggil ulang untuk karyawan yang sudah dibayar tidak mengubah apa pun dan tidak error.\n\n**422** bila karyawan tidak punya produksi pada periode itu.\n\nRole: Owner."
+          },
+          "response": []
+        },
+        {
+          "name": "Bayar semua gaji minggu ini",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tanggal\": \"{{tanggalHariIni}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/penggajian/bayar-semua",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "penggajian",
+                "bayar-semua"
+              ]
+            },
+            "description": "Membayar seluruh karyawan yang belum dibayar pada periode tersebut sekaligus.\n\n```json\n{ \"message\": \"28 gaji karyawan ditandai sudah dibayar.\",\n  \"data\": { \"jumlahKaryawan\": 28, \"totalDibayar\": 5934030.5 } }\n```\n\n**422** bila tidak ada yang perlu dibayar. Role: Owner."
+          },
+          "response": []
+        },
+        {
+          "name": "Export rekap gaji (CSV)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/csv"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/penggajian/export?tanggal={{tanggalHariIni}}&format=csv",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "penggajian",
+                "export"
+              ],
+              "query": [
+                {
+                  "key": "tanggal",
+                  "value": "{{tanggalHariIni}}",
+                  "description": "Tanggal mana saja dalam minggu yang dimaksud"
+                },
+                {
+                  "key": "format",
+                  "value": "csv",
+                  "description": "csv (default) | xlsx | pdf"
+                }
+              ]
+            },
+            "description": "Rekap gaji satu periode Senin-Jumat beserta tarif yang dipakai dan total sudah/belum dibayar.\n\n---\n**Format file** — atur lewat parameter `format`: `csv` (default), `xlsx` (Excel asli, angka bisa di-SUM), atau `pdf` (berkop perusahaan).\n\nCSV:\n\nCSV siap dibuka di Excel: pemisah kolom `;`, desimal koma (`1450000,00`), diawali BOM UTF-8. Nama file otomatis memuat rentang tanggal, mis. `laba-rugi_2026-08-01_sd_2026-08-31.csv`.\n\nDi Postman klik **Save Response -> Save to a file** untuk mengunduhnya.\n\nSetiap export tercatat di audit log (`laporan.export`)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "9. Penjualan ke Eksportir",
+      "item": [
+        {
+          "name": "Daftar penjualan",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/penjualan?dari=&sampai=&eksportirId=&q=&page=1&perPage=25",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "penjualan"
+              ],
+              "query": [
+                {
+                  "key": "dari",
+                  "value": "",
+                  "description": "YYYY-MM-DD"
                     "name": "Daftar sesi tungku",
                     "request": {
                         "method": "GET",
@@ -1177,6 +1726,115 @@
             ]
         },
         {
+          "name": "Batalkan penjualan",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"alasan\": \"Barang dikembalikan eksportir\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/penjualan/{{penjualanId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "penjualan",
+                "{{penjualanId}}"
+              ]
+            },
+            "description": "Stok Kristal & Brondol dikembalikan lewat mutasi balik, record di-soft delete, pemasukan otomatis hilang dari laporan keuangan."
+          },
+          "response": []
+        },
+        {
+          "name": "Export penjualan (CSV)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/csv"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/penjualan/export?periode=bulan_ini&dari=&sampai=&eksportirId=&format=csv",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "penjualan",
+                "export"
+              ],
+              "query": [
+                {
+                  "key": "periode",
+                  "value": "bulan_ini",
+                  "description": "bulan_ini (default) | bulan_lalu | custom"
+                },
+                {
+                  "key": "dari",
+                  "value": "",
+                  "description": "YYYY-MM-DD, wajib bila periode=custom"
+                },
+                {
+                  "key": "sampai",
+                  "value": "",
+                  "description": "YYYY-MM-DD, wajib bila periode=custom"
+                },
+                {
+                  "key": "eksportirId",
+                  "value": "",
+                  "description": "Filter per eksportir"
+                },
+                {
+                  "key": "format",
+                  "value": "csv",
+                  "description": "csv (default) | xlsx | pdf"
+                }
+              ]
+            },
+            "description": "Rincian invoice dengan kolom kristal dan brondol terpisah (kg, harga, subtotal).\n\n---\n**Format file** — atur lewat parameter `format`: `csv` (default), `xlsx` (Excel asli, angka bisa di-SUM), atau `pdf` (berkop perusahaan).\n\nCSV:\n\nCSV siap dibuka di Excel: pemisah kolom `;`, desimal koma (`1450000,00`), diawali BOM UTF-8. Nama file otomatis memuat rentang tanggal, mis. `laba-rugi_2026-08-01_sd_2026-08-31.csv`.\n\nDi Postman klik **Save Response -> Save to a file** untuk mengunduhnya.\n\nSetiap export tercatat di audit log (`laporan.export`)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "10. Keuangan & Laporan",
+      "description": "Khusus Owner. Staff Gudang & Staff Produksi menerima 403 di seluruh folder ini.",
+      "item": [
+        {
+          "name": "Laporan laba rugi",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/keuangan/laba-rugi?periode=bulan_ini&dari=&sampai=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "keuangan",
+                "laba-rugi"
+              ],
+              "query": [
             "name": "8. Penggajian",
             "description": "Periode gaji Senin s.d. JUMAT (bukan Senin-Minggu), dibayarkan setiap Jumat.",
             "item": [
@@ -1720,6 +2378,163 @@
                     },
                     "response": []
                 }
+              ]
+            },
+            "description": "Jejak audit perubahan harga, tarif gaji, transaksi pembelian/penjualan, produksi, stok opname, dan pembayaran gaji — lengkap dengan siapa, kapan, dan dari IP mana.\n\n```json\n{ \"data\": [ {\n  \"aksi\": \"harga.ubah\",\n  \"deskripsi\": \"Harga NS 1 diubah dari Rp 14.500 menjadi Rp 15.200 per kg\",\n  \"user\": { \"id\": \"1\", \"nama\": \"Shoffal (Owner)\", \"role\": \"owner\" },\n  \"data\": { \"grade\": \"ns1\", \"harga_lama\": 14500, \"harga_baru\": 15200 },\n  \"ip\": \"127.0.0.1\", \"waktu\": \"2026-08-13T16:19:40+07:00\"\n} ],\n  \"meta\": { \"currentPage\": 1, \"lastPage\": 12, \"perPage\": 50, \"total\": 587 } }\n```"
+          },
+          "response": []
+        },
+        {
+          "name": "Export laba rugi (CSV)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/csv"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/keuangan/laba-rugi/export?periode=bulan_ini&dari=&sampai=&format=csv",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "keuangan",
+                "laba-rugi",
+                "export"
+              ],
+              "query": [
+                {
+                  "key": "periode",
+                  "value": "bulan_ini",
+                  "description": "bulan_ini (default) | bulan_lalu | custom"
+                },
+                {
+                  "key": "dari",
+                  "value": "",
+                  "description": "YYYY-MM-DD, wajib bila periode=custom"
+                },
+                {
+                  "key": "sampai",
+                  "value": "",
+                  "description": "YYYY-MM-DD, wajib bila periode=custom"
+                },
+                {
+                  "key": "format",
+                  "value": "csv",
+                  "description": "csv (default) | xlsx | pdf"
+                }
+              ]
+            },
+            "description": "Ringkasan laba rugi: pendapatan, rincian HPP (bahan + upah kristal/brondol + uang makan), biaya operasional, laba bersih, dan margin.\n\n---\n**Format file** — atur lewat parameter `format`: `csv` (default), `xlsx` (Excel asli, angka bisa di-SUM), atau `pdf` (berkop perusahaan).\n\nCSV:\n\nCSV siap dibuka di Excel: pemisah kolom `;`, desimal koma (`1450000,00`), diawali BOM UTF-8. Nama file otomatis memuat rentang tanggal, mis. `laba-rugi_2026-08-01_sd_2026-08-31.csv`.\n\nDi Postman klik **Save Response -> Save to a file** untuk mengunduhnya.\n\nSetiap export tercatat di audit log (`laporan.export`)."
+          },
+          "response": []
+        },
+        {
+          "name": "Export biaya operasional (CSV)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/csv"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/keuangan/biaya/export?periode=bulan_ini&dari=&sampai=&kategori=&format=csv",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "keuangan",
+                "biaya",
+                "export"
+              ],
+              "query": [
+                {
+                  "key": "periode",
+                  "value": "bulan_ini",
+                  "description": "bulan_ini (default) | bulan_lalu | custom"
+                },
+                {
+                  "key": "dari",
+                  "value": "",
+                  "description": "YYYY-MM-DD, wajib bila periode=custom"
+                },
+                {
+                  "key": "sampai",
+                  "value": "",
+                  "description": "YYYY-MM-DD, wajib bila periode=custom"
+                },
+                {
+                  "key": "kategori",
+                  "value": "",
+                  "description": "Kategori stok / kategori biaya"
+                },
+                {
+                  "key": "format",
+                  "value": "csv",
+                  "description": "csv (default) | xlsx | pdf"
+                }
+              ]
+            },
+            "description": "Rincian biaya operasional lain-lain + baris TOTAL.\n\n---\n**Format file** — atur lewat parameter `format`: `csv` (default), `xlsx` (Excel asli, angka bisa di-SUM), atau `pdf` (berkop perusahaan).\n\nCSV:\n\nCSV siap dibuka di Excel: pemisah kolom `;`, desimal koma (`1450000,00`), diawali BOM UTF-8. Nama file otomatis memuat rentang tanggal, mis. `laba-rugi_2026-08-01_sd_2026-08-31.csv`.\n\nDi Postman klik **Save Response -> Save to a file** untuk mengunduhnya.\n\nSetiap export tercatat di audit log (`laporan.export`)."
+          },
+          "response": []
+        },
+        {
+          "name": "Ringkasan AI (Claude)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/keuangan/ringkasan-ai?periode=bulan_ini&segarkan=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "keuangan",
+                "ringkasan-ai"
+              ],
+              "query": [
+                {
+                  "key": "periode",
+                  "value": "bulan_ini",
+                  "description": "bulan_ini (default) | bulan_lalu | custom"
+                },
+                {
+                  "key": "dari",
+                  "value": "",
+                  "description": "YYYY-MM-DD, wajib bila periode=custom"
+                },
+                {
+                  "key": "sampai",
+                  "value": "",
+                  "description": "YYYY-MM-DD, wajib bila periode=custom"
+                },
+                {
+                  "key": "segarkan",
+                  "value": "",
+                  "description": "1 = abaikan cache, minta ringkasan baru"
+                }
+              ]
+            },
+            "description": "Ringkasan naratif laporan yang ditulis Claude lewat Laravel AI SDK.\n\n**Angka tidak dihitung model.** Laba rugi, tren 6 bulan, posisi stok, dan produksi diambil lebih dulu dari data transaksi nyata lalu dikirim sebagai fakta di prompt; model hanya menafsirkan. Blok `angka` pada respons berisi data mentah yang sama supaya hasilnya bisa diverifikasi.\n\nKeluaran Markdown dengan 4 bagian: Ringkasan, Yang menonjol, Perlu diperhatikan, Saran.\n\nHasil dicache 30 menit per periode (`dariCache` menandainya); `segarkan=1` memaksa panggilan baru.\n\n**503** bila `ANTHROPIC_API_KEY` belum diisi · **502** bila panggilan model gagal · **403** untuk role selain Owner."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "11. Logout (jalankan paling akhir)",
+      "description": "Sengaja dipisah agar tidak mencabut token di tengah Collection Runner.",
+      "item": [
             ]
         },
         {
