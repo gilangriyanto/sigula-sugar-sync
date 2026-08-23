@@ -6,14 +6,14 @@ ke bawah.
 
 > **Yang berbeda dari panduan BWAStore** — jangan pakai versi lamanya, akan gagal:
 >
-> | | BWAStore | SIGULA |
-> |---|---|---|
-> | PHP | 7.2 | **8.3** (Laravel 13 menolak PHP < 8.3) |
-> | Ubuntu | 18.04 | **22.04 / 24.04** |
-> | Socket PHP | `/var/run/php/php7.2-fpm.sock` | `/run/php/php8.3-fpm.sock` |
-> | Buat user MySQL | `GRANT ... IDENTIFIED BY` | `CREATE USER` lalu `GRANT` **terpisah** (MySQL 8) |
-> | Document root | `/var/www/DOMAIN/public` | `/var/www/DOMAIN/**backend**/public` |
-> | Migrasi | `php artisan migrate` | `php artisan migrate **--force**` |
+> |                 | BWAStore                       | SIGULA                                            |
+> | --------------- | ------------------------------ | ------------------------------------------------- |
+> | PHP             | 7.2                            | **8.3** (Laravel 13 menolak PHP < 8.3)            |
+> | Ubuntu          | 18.04                          | **22.04 / 24.04**                                 |
+> | Socket PHP      | `/var/run/php/php7.2-fpm.sock` | `/run/php/php8.3-fpm.sock`                        |
+> | Buat user MySQL | `GRANT ... IDENTIFIED BY`      | `CREATE USER` lalu `GRANT` **terpisah** (MySQL 8) |
+> | Document root   | `/var/www/DOMAIN/public`       | `/var/www/DOMAIN/**backend**/public`              |
+> | Migrasi         | `php artisan migrate`          | `php artisan migrate **--force**`                 |
 
 ---
 
@@ -396,14 +396,14 @@ cat $APP/.env
 
 Keterangan isian penting:
 
-| Baris | Isi dengan |
-|---|---|
-| `APP_URL` | URL API, pakai `https://` kalau nanti dipasang SSL |
-| `DB_PASSWORD` | Password dari langkah 10 |
-| `FRONTEND_URL` | Domain frontend (untuk CORS). Beberapa domain pisahkan dengan koma |
-| `SIGULA_DEFAULT_PASSWORD` | Password awal 3 akun login |
-| `APP_DEBUG` | **Wajib `false`** — kalau `true`, pesan error membocorkan isi `.env` |
-| `SIGULA_SEED_DEMO` | **`false`** supaya data transaksi demo tidak ikut masuk |
+| Baris                     | Isi dengan                                                           |
+| ------------------------- | -------------------------------------------------------------------- |
+| `APP_URL`                 | URL API, pakai `https://` kalau nanti dipasang SSL                   |
+| `DB_PASSWORD`             | Password dari langkah 10                                             |
+| `FRONTEND_URL`            | Domain frontend (untuk CORS). Beberapa domain pisahkan dengan koma   |
+| `SIGULA_DEFAULT_PASSWORD` | Password awal 3 akun login                                           |
+| `APP_DEBUG`               | **Wajib `false`** — kalau `true`, pesan error membocorkan isi `.env` |
+| `SIGULA_SEED_DEMO`        | **`false`** supaya data transaksi demo tidak ikut masuk              |
 
 Kalau mau mengubah lagi nanti:
 
@@ -772,17 +772,17 @@ php artisan up
 
 ## 23. Troubleshooting
 
-| Gejala | Penyebab | Perbaikan |
-|---|---|---|
-| **502 Bad Gateway** | Socket PHP salah | `ls /run/php/` lalu samakan `fastcgi_pass` di vhost |
-| **500 / layar putih** | Izin folder | Ulangi langkah 14 |
-| **500 setelah `git pull`** | Cache config lama | `php artisan optimize:clear && php artisan optimize` |
-| **404 di semua endpoint** | `root` salah folder | Harus berakhir `/backend/public` |
-| **"could not be opened"** | `storage/logs` tidak writable | Ulangi langkah 14 |
-| **CORS error di browser** | `FRONTEND_URL` belum sesuai | Perbaiki `.env` lalu `php artisan optimize` |
-| **`SQLSTATE[HY000] [1045]`** | Password DB salah | Cocokkan `.env` dengan langkah 10 |
-| **`composer install` mati** | RAM kurang | Tambah swap (lihat bawah) |
-| **Migrasi minta konfirmasi** | Lupa `--force` | `php artisan migrate --force` |
+| Gejala                       | Penyebab                      | Perbaikan                                            |
+| ---------------------------- | ----------------------------- | ---------------------------------------------------- |
+| **502 Bad Gateway**          | Socket PHP salah              | `ls /run/php/` lalu samakan `fastcgi_pass` di vhost  |
+| **500 / layar putih**        | Izin folder                   | Ulangi langkah 14                                    |
+| **500 setelah `git pull`**   | Cache config lama             | `php artisan optimize:clear && php artisan optimize` |
+| **404 di semua endpoint**    | `root` salah folder           | Harus berakhir `/backend/public`                     |
+| **"could not be opened"**    | `storage/logs` tidak writable | Ulangi langkah 14                                    |
+| **CORS error di browser**    | `FRONTEND_URL` belum sesuai   | Perbaiki `.env` lalu `php artisan optimize`          |
+| **`SQLSTATE[HY000] [1045]`** | Password DB salah             | Cocokkan `.env` dengan langkah 10                    |
+| **`composer install` mati**  | RAM kurang                    | Tambah swap (lihat bawah)                            |
+| **Migrasi minta konfirmasi** | Lupa `--force`                | `php artisan migrate --force`                        |
 
 Lihat log kalau ada error (ganti `api.nirasarimurni.com` dengan domain Anda):
 
@@ -890,14 +890,14 @@ Pastikan domain frontend terdaftar di `FRONTEND_URL` pada `.env` backend, lalu
 
 ## Ringkasan hasil akhir
 
-| | |
-|---|---|
-| API | `https://api.nirasarimurni.com/api/v1` |
-| Aplikasi | `/var/www/api.nirasarimurni.com/backend` |
-| Database | `sigula` |
-| Akun | `owner@` (Owner), `gudang@` (Staff Gudang), `produksi@` (Staff Produksi) |
-| Backup | otomatis 02:00 → `storage/app/backups/`, disimpan 14 hari |
-| Log | `storage/logs/laravel-*.log` · `/var/log/nginx/DOMAIN-error.log` |
+|          |                                                                          |
+| -------- | ------------------------------------------------------------------------ |
+| API      | `https://api.nirasarimurni.com/api/v1`                                   |
+| Aplikasi | `/var/www/api.nirasarimurni.com/backend`                                 |
+| Database | `sigula`                                                                 |
+| Akun     | `owner@` (Owner), `gudang@` (Staff Gudang), `produksi@` (Staff Produksi) |
+| Backup   | otomatis 02:00 → `storage/app/backups/`, disimpan 14 hari                |
+| Log      | `storage/logs/laravel-*.log` · `/var/log/nginx/DOMAIN-error.log`         |
 
 Uji seluruh endpoint lewat Postman: import
 [`SIGULA.postman_collection.json`](SIGULA.postman_collection.json), ganti variable

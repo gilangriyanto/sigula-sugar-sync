@@ -44,10 +44,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
 
   // Sidebar hanya menampilkan menu yang diizinkan role user, sesuai `menu` dari /auth/me.
-  const allowedMenu = useMemo(
-    () => MENU.filter((m) => user?.menu.includes(m.key)),
-    [user],
-  );
+  const allowedMenu = useMemo(() => MENU.filter((m) => user?.menu.includes(m.key)), [user]);
 
   const handleLogout = async () => {
     await logout();
@@ -110,7 +107,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             onClick={() => setCollapsed((c) => !c)}
             className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
           >
-            <ChevronLeft className={cn("size-[18px] transition-transform", collapsed && "rotate-180")} />
+            <ChevronLeft
+              className={cn("size-[18px] transition-transform", collapsed && "rotate-180")}
+            />
             {!collapsed && <span>Perkecil menu</span>}
           </button>
         </div>
@@ -140,7 +139,9 @@ export function AppShell({ children }: { children: ReactNode }) {
               <Menu className="size-5" />
             </Button>
             <div>
-              <p className="text-sm font-semibold leading-tight">Sistem Informasi Gula Terintegrasi</p>
+              <p className="text-sm font-semibold leading-tight">
+                Sistem Informasi Gula Terintegrasi
+              </p>
               <p className="text-xs text-muted-foreground">PT Nira Sari Murni</p>
             </div>
           </div>

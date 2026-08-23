@@ -20,7 +20,8 @@ export const Route = createFileRoute("/")({
       { property: "og:title", content: "Masuk — SIGULA | PT Nira Sari Murni" },
       {
         property: "og:description",
-        content: "Satu platform untuk pengadaan gula: petani, produksi, penggajian, penjualan, dan keuangan.",
+        content:
+          "Satu platform untuk pengadaan gula: petani, produksi, penggajian, penjualan, dan keuangan.",
       },
     ],
   }),

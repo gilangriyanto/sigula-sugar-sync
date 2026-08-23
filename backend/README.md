@@ -11,8 +11,16 @@ permanen, konsisten antar modul, dan bisa diaudit.
 | Database | MySQL/MariaDB (production) · SQLite (dev & test) |
 | Base URL | `/api/v1` |
 | Test | 113 feature test, 602 assertion |
+|           |                                                  |
+| --------- | ------------------------------------------------ |
+| Framework | Laravel 13 (PHP 8.3+)                            |
+| Auth      | Laravel Sanctum (Bearer token), role-based       |
+| Database  | MySQL/MariaDB (production) · SQLite (dev & test) |
+| Base URL  | `/api/v1`                                        |
+| Test      | 80 feature test, 418 assertion                   |
 
 Dokumentasi lain:
+
 - [`docs/API.md`](docs/API.md) — daftar endpoint, payload, dan contoh response
 - [`docs/INTEGRASI-FRONTEND.md`](docs/INTEGRASI-FRONTEND.md) — cara menyambungkan React yang sudah ada
 - [`docs/DEPLOY-VPS.md`](docs/DEPLOY-VPS.md) — panduan deploy ke VPS (Ubuntu + Nginx + MySQL + PHP 8.3)
@@ -54,11 +62,11 @@ Ingin coba cepat tanpa MySQL? Set `DB_CONNECTION=sqlite` di `.env` lalu
 
 ### Akun bawaan seeder
 
-| Email | Role | Akses |
-|---|---|---|
-| `owner@nirasarimurni.com` | Owner | Semua modul termasuk Keuangan |
-| `gudang@nirasarimurni.com` | Staff Gudang | Petani, Pembelian, Stok |
-| `produksi@nirasarimurni.com` | Staff Produksi | Produksi (sesi tungku) |
+| Email                        | Role           | Akses                         |
+| ---------------------------- | -------------- | ----------------------------- |
+| `owner@nirasarimurni.com`    | Owner          | Semua modul termasuk Keuangan |
+| `gudang@nirasarimurni.com`   | Staff Gudang   | Petani, Pembelian, Stok       |
+| `produksi@nirasarimurni.com` | Staff Produksi | Produksi (sesi tungku)        |
 
 Password awal diambil dari `SIGULA_DEFAULT_PASSWORD` (default `password`).
 **Ganti sebelum dipakai di server.**
@@ -137,9 +145,9 @@ mungkin ada mutasi setengah jadi.
 
 ## 4. Aturan bisnis yang dijaga sistem
 
-| Aturan | Perilaku |
-|---|---|
-| Rendemen | `(kg kristal + kg brondol) ÷ kg bahan mentah × 100%`, dihitung otomatis |
+| Aturan             | Perilaku                                                                                  |
+| ------------------ | ----------------------------------------------------------------------------------------- |
+| Rendemen           | `(kg kristal + kg brondol) ÷ kg bahan mentah × 100%`, dihitung otomatis                   |
 | Pembagian karyawan | Otomatis ÷2; porsi kedua = sisa, jadi jumlah 2 porsi selalu persis sama dengan total sesi |
 | Hari kerja | Jumlah **tanggal berbeda**; 3 sesi dalam 1 hari tetap 1 hari kerja |
 | Periode gaji | Senin s.d. **Jumat**, dibayarkan Jumat |
@@ -153,22 +161,32 @@ mungkin ada mutasi setengah jadi.
 | Hapus master | Petani/eksportir bertransaksi tidak bisa dihapus; karyawan berhistori dinonaktifkan |
 | Export laporan | 3 format (CSV/XLSX/PDF) untuk 7 laporan; angka XLSX tersimpan sebagai angka asli; tiap export tercatat di audit log |
 | Ringkasan AI | Angka diambil dari transaksi lalu dikirim sebagai fakta di prompt — model tidak menghitung sendiri; provider (Claude/Gemini/dll) diganti lewat `AI_PROVIDER` tanpa ubah kode; hasil dicache 30 menit |
+| Hari kerja         | Jumlah **tanggal berbeda**; 3 sesi dalam 1 hari tetap 1 hari kerja                        |
+| Periode gaji       | Senin s.d. **Jumat**, dibayarkan Jumat                                                    |
+| Gaji dibayar       | Angka dibekukan (snapshot) di `gaji_mingguan`, tidak berubah lagi                         |
+| Sesi vs gaji       | Sesi tidak bisa dibatalkan bila gaji periodenya sudah dibayar                             |
+| Hasil produksi     | Tidak boleh melebihi bahan mentah (kekekalan massa)                                       |
+| Mulai sesi         | Bahan yang sedang dipakai tungku lain yang belum selesai tidak dihitung tersedia          |
+| Penjualan          | 1 invoice, maksimal 2 baris (kristal & brondol) dengan kg + harga masing-masing           |
+| Stok minus         | Tidak pernah bisa terjadi — mutasi ditolak sebelum saldo tersimpan                        |
+| Nomor dokumen      | Counter dikunci di database, tidak mungkin kembar walau request bersamaan                 |
+| Hapus master       | Petani/eksportir bertransaksi tidak bisa dihapus; karyawan berhistori dinonaktifkan       |
 
 ---
 
 ## 5. Hak akses
 
-| Modul | Owner | Staff Gudang | Staff Produksi |
-|---|:---:|:---:|:---:|
-| Dashboard | ✅ | ✅ (tanpa angka keuangan) | ✅ (tanpa angka keuangan) |
-| Data Petani | ✅ | ✅ | — |
-| Master Harga & Tarif | ✅ | lihat | lihat |
-| Pembelian | ✅ | ✅ | — |
-| Stok & Opname | ✅ | ✅ | lihat |
-| Produksi | ✅ | lihat | ✅ |
-| Penggajian | ✅ | — | — |
-| Penjualan | ✅ | — | — |
-| Keuangan & Audit Log | ✅ | — | — |
+| Modul                | Owner |       Staff Gudang        |      Staff Produksi       |
+| -------------------- | :---: | :-----------------------: | :-----------------------: |
+| Dashboard            |  ✅   | ✅ (tanpa angka keuangan) | ✅ (tanpa angka keuangan) |
+| Data Petani          |  ✅   |            ✅             |             —             |
+| Master Harga & Tarif |  ✅   |           lihat           |           lihat           |
+| Pembelian            |  ✅   |            ✅             |             —             |
+| Stok & Opname        |  ✅   |            ✅             |           lihat           |
+| Produksi             |  ✅   |           lihat           |            ✅             |
+| Penggajian           |  ✅   |             —             |             —             |
+| Penjualan            |  ✅   |             —             |             —             |
+| Keuangan & Audit Log |  ✅   |             —             |             —             |
 
 Diimplementasikan sebagai Gate (`App\Providers\AuthServiceProvider`) dan dipasang di route
 lewat middleware `can:`. Endpoint `GET /auth/me` mengembalikan `menu` dan `abilities`

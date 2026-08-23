@@ -49,12 +49,16 @@ export function StatCard({
     <Card className="shadow-card">
       <CardContent className="flex items-start gap-4 p-5">
         {icon && (
-          <span className={cn("flex size-10 shrink-0 items-center justify-center rounded-xl", toneRing)}>
+          <span
+            className={cn("flex size-10 shrink-0 items-center justify-center rounded-xl", toneRing)}
+          >
             {icon}
           </span>
         )}
         <div className="min-w-0">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            {label}
+          </p>
           <p className="mt-1 truncate text-2xl font-semibold tracking-tight">{value}</p>
           {hint && <div className="mt-1 text-xs text-muted-foreground">{hint}</div>}
         </div>
@@ -132,7 +136,9 @@ export function DataTable<T>({
   initialSort?: { key: string; dir: "asc" | "desc" };
   rowKey: (row: T, i: number) => string;
 }) {
-  const [sort, setSort] = useState<{ key: string; dir: "asc" | "desc" } | null>(initialSort ?? null);
+  const [sort, setSort] = useState<{ key: string; dir: "asc" | "desc" } | null>(
+    initialSort ?? null,
+  );
 
   const sorted = useMemo(() => {
     if (!sort) return rows;
@@ -164,7 +170,11 @@ export function DataTable<T>({
                 key={c.key}
                 className={cn(
                   "whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground",
-                  c.align === "right" ? "text-right" : c.align === "center" ? "text-center" : "text-left",
+                  c.align === "right"
+                    ? "text-right"
+                    : c.align === "center"
+                      ? "text-center"
+                      : "text-left",
                 )}
               >
                 {c.sortValue ? (
@@ -200,7 +210,11 @@ export function DataTable<T>({
                   key={c.key}
                   className={cn(
                     "px-4 py-3 align-middle",
-                    c.align === "right" ? "text-right" : c.align === "center" ? "text-center" : "text-left",
+                    c.align === "right"
+                      ? "text-right"
+                      : c.align === "center"
+                        ? "text-center"
+                        : "text-left",
                     c.className,
                   )}
                 >

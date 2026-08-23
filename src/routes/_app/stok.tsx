@@ -1,14 +1,26 @@
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { ArrowDownCircle, ArrowUpCircle, ClipboardCheck } from "lucide-react";
+import { ArrowDownCircle, ArrowUpCircle, ClipboardCheck, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   DataTable,
   EmptyState,
@@ -18,8 +30,11 @@ import {
   type Column,
 } from "@/components/sigula/ui-bits";
 import { angka, kg, tanggalPendek } from "@/lib/format";
-import { GRADES, KATEGORI_STOK, type StokKategori, type StokMove } from "@/lib/sigula-types";
-import { useSigula } from "@/store/sigula-store";
+import { KATEGORI_STOK, type StokKategori } from "@/lib/sigula-types";
+import { todayISO } from "@/lib/sigula-seed";
+import { ApiError } from "@/lib/api-client";
+import type { JenisMutasi, KartuStokRow } from "@/lib/api/stok";
+import { useKartuStok, useStokOpname, useStokPosisi } from "@/hooks/use-stok";
 
 export const Route = createFileRoute("/_app/stok")({
   head: () => ({
@@ -37,56 +52,108 @@ export const Route = createFileRoute("/_app/stok")({
   component: StokPage,
 });
 
-const AMBANG_MENIPIS = 1500;
+const PER_PAGE = 50;
+
+function apiErrorMessage(err: unknown, fallback: string): string {
+  return err instanceof ApiError ? (err.firstFieldError ?? err.message) : fallback;
+}
+
+function LoadingRow() {
+  return (
+    <div className="flex items-center justify-center gap-2 px-4 py-14 text-sm text-muted-foreground">
+      <Loader2 className="size-4 animate-spin" /> Memuat data…
+    </div>
+  );
+}
 
 function StokPage() {
-  const { state, stok, addOpname, today } = useSigula();
+  // ---- Posisi stok -------------------------------------------------------------
+  const { data: posisi, isLoading: posisiLoading, isError: posisiError } = useStokPosisi();
+
+  // ---- Kartu stok: filter & pagination -------------------------------------------
   const [q, setQ] = useState("");
+  const [qDebounced, setQDebounced] = useState("");
+  const [dari, setDari] = useState("");
+  const [sampai, setSampai] = useState("");
   const [fKategori, setFKategori] = useState<"semua" | StokKategori>("semua");
-  const [fJenis, setFJenis] = useState<"semua" | "Masuk" | "Keluar">("semua");
+  const [fJenis, setFJenis] = useState<"semua" | JenisMutasi>("semua");
+  const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    const t = setTimeout(() => setQDebounced(q.trim()), 300);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [qDebounced, dari, sampai, fKategori, fJenis]);
+
+  const {
+    data: kartuResult,
+    isLoading: kartuLoading,
+    isError: kartuError,
+  } = useKartuStok({
+    kategori: fKategori === "semua" ? undefined : fKategori,
+    jenis: fJenis === "semua" ? undefined : fJenis,
+    dari: dari || undefined,
+    sampai: sampai || undefined,
+    q: qDebounced || undefined,
+    page,
+    perPage: PER_PAGE,
+  });
+
+  const rows = kartuResult?.data ?? [];
+  const meta = kartuResult?.meta;
+
+  // ---- Stok opname ---------------------------------------------------------------
+  const stokOpname = useStokOpname();
   const [opnameOpen, setOpnameOpen] = useState(false);
   const [opname, setOpname] = useState({
     kategori: "NS 1" as StokKategori,
     fisik: "",
     alasan: "",
-    tanggal: today,
+    tanggal: todayISO(),
   });
   const [err, setErr] = useState<string | null>(null);
 
-  const rows = useMemo(() => {
-    const term = q.trim().toLowerCase();
-    return state.stokMoves
-      .filter((m) => (fKategori === "semua" ? true : m.kategori === fKategori))
-      .filter((m) => (fJenis === "semua" ? true : m.jenis === fJenis))
-      .filter((m) => (term ? m.keterangan.toLowerCase().includes(term) : true))
-      .slice(0, 300);
-  }, [state.stokMoves, q, fKategori, fJenis]);
+  const saldoSaatIni = posisi?.saldo[opname.kategori] ?? 0;
+  const selisih = (Number(opname.fisik) || 0) - saldoSaatIni;
 
-  const selisih = (Number(opname.fisik) || 0) - stok[opname.kategori];
+  const bukaOpname = () => {
+    setOpname({ kategori: "NS 1", fisik: "", alasan: "", tanggal: todayISO() });
+    setErr(null);
+    setOpnameOpen(true);
+  };
 
-  const simpanOpname = () => {
+  const simpanOpname = async () => {
     if (!opname.fisik.trim() || Number.isNaN(Number(opname.fisik)))
       return setErr("Jumlah stok fisik wajib diisi berupa angka.");
     if (Number(opname.fisik) < 0) return setErr("Jumlah stok fisik tidak boleh negatif.");
     if (!opname.alasan.trim()) return setErr("Alasan koreksi wajib diisi.");
     if (selisih === 0) return setErr("Tidak ada selisih dengan stok sistem.");
-    addOpname(opname.kategori, selisih, opname.alasan.trim(), opname.tanggal);
-    toast.success("Stok opname tercatat", {
-      description: `${opname.kategori}: koreksi ${selisih > 0 ? "+" : "−"}${angka(Math.abs(selisih))} kg`,
-    });
-    setOpnameOpen(false);
-    setOpname({ kategori: "NS 1", fisik: "", alasan: "", tanggal: today });
-    setErr(null);
+    try {
+      await stokOpname.mutateAsync({
+        kategori: opname.kategori,
+        stokFisik: Number(opname.fisik),
+        alasan: opname.alasan.trim(),
+        tanggal: opname.tanggal || undefined,
+      });
+      toast.success("Stok opname tercatat", {
+        description: `${opname.kategori}: koreksi ${selisih > 0 ? "+" : "−"}${angka(Math.abs(selisih))} kg`,
+      });
+      setOpnameOpen(false);
+    } catch (e) {
+      setErr(apiErrorMessage(e, "Gagal menyimpan stok opname."));
+    }
   };
 
-  const cols: Column<StokMove>[] = [
-    { key: "tgl", header: "Tanggal", sortValue: (r) => r.tanggal, cell: (r) => tanggalPendek(r.tanggal) },
+  const cols: Column<KartuStokRow>[] = [
+    { key: "tgl", header: "Tanggal", cell: (r) => tanggalPendek(r.tanggal) },
     {
       key: "jenis",
       header: "Jenis",
-      sortValue: (r) => r.jenis,
       cell: (r) =>
-        r.jenis === "Masuk" ? (
+        r.jenisKode === "masuk" ? (
           <Badge className="bg-success/15 text-success hover:bg-success/15">
             <ArrowDownCircle className="mr-1 size-3" /> Masuk
           </Badge>
@@ -96,29 +163,29 @@ function StokPage() {
           </Badge>
         ),
     },
-    {
-      key: "kat",
-      header: "Kategori",
-      sortValue: (r) => r.kategori,
-      cell: (r) => (
-        <span>
-          {GRADES.includes(r.kategori as never) ? `Bahan Mentah ${r.kategori}` : `Produk ${r.kategori}`}
-        </span>
-      ),
-    },
+    { key: "kat", header: "Kategori", cell: (r) => <span>{r.kategoriLabel}</span> },
     {
       key: "jml",
       header: "Jumlah",
       align: "right",
-      sortValue: (r) => r.jumlah,
       cell: (r) => (
-        <span className={r.jenis === "Masuk" ? "font-medium text-success" : "font-medium"}>
-          {r.jenis === "Masuk" ? "+" : "−"}
+        <span className={r.jenisKode === "masuk" ? "font-medium text-success" : "font-medium"}>
+          {r.jenisKode === "masuk" ? "+" : "−"}
           {angka(r.jumlah)} kg
         </span>
       ),
     },
-    { key: "ket", header: "Keterangan", cell: (r) => <span className="text-muted-foreground">{r.keterangan}</span> },
+    {
+      key: "saldo",
+      header: "Saldo Setelah",
+      align: "right",
+      cell: (r) => `${angka(r.saldoSetelah)} kg`,
+    },
+    {
+      key: "ket",
+      header: "Keterangan",
+      cell: (r) => <span className="text-muted-foreground">{r.keterangan}</span>,
+    },
   ];
 
   return (
@@ -127,51 +194,78 @@ function StokPage() {
         title="Manajemen Stok"
         subtitle="Posisi stok dan kartu stok keluar-masuk"
         action={
-          <Button onClick={() => setOpnameOpen(true)} variant="outline">
+          <Button onClick={bukaOpname} variant="outline">
             <ClipboardCheck className="mr-2 size-4" /> Stok Opname
           </Button>
         }
       />
 
+      {posisiError && (
+        <p className="mb-4 text-sm text-destructive">
+          Gagal memuat posisi stok. Coba muat ulang halaman.
+        </p>
+      )}
+
       <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
         Stok Bahan Mentah
       </h2>
       <div className="grid gap-4 md:grid-cols-3">
-        {GRADES.map((g) => {
-          const aman = stok[g] >= AMBANG_MENIPIS;
-          return (
-            <Card key={g} className="shadow-card">
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center justify-between text-base">
-                  <span>Grade {g}</span>
-                  {aman ? (
-                    <Badge className="bg-success/15 text-success hover:bg-success/15">Aman</Badge>
-                  ) : (
-                    <Badge className="bg-warning/25 text-warning-foreground hover:bg-warning/25">Menipis</Badge>
-                  )}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-3xl font-semibold tracking-tight">{kg(stok[g])}</p>
-                <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-secondary">
-                  <div
-                    className={aman ? "h-full bg-success" : "h-full bg-warning"}
-                    style={{ width: `${Math.min(100, (stok[g] / (AMBANG_MENIPIS * 3)) * 100)}%` }}
-                  />
-                </div>
-                <p className="mt-2 text-xs text-muted-foreground">Ambang menipis: {kg(AMBANG_MENIPIS)}</p>
-              </CardContent>
-            </Card>
-          );
-        })}
+        {posisiLoading || !posisi
+          ? Array.from({ length: 3 }).map((_, i) => (
+              <Card key={i} className="shadow-card">
+                <CardContent className="p-5 text-sm text-muted-foreground">Memuat…</CardContent>
+              </Card>
+            ))
+          : posisi.bahanMentah.map((b) => {
+              const aman = b.status === "aman";
+              return (
+                <Card key={b.kode} className="shadow-card">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="flex items-center justify-between text-base">
+                      <span>Grade {b.nama}</span>
+                      {aman ? (
+                        <Badge className="bg-success/15 text-success hover:bg-success/15">
+                          Aman
+                        </Badge>
+                      ) : (
+                        <Badge className="bg-warning/25 text-warning-foreground hover:bg-warning/25">
+                          Menipis
+                        </Badge>
+                      )}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-3xl font-semibold tracking-tight">{kg(b.saldo)}</p>
+                    <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-secondary">
+                      <div
+                        className={aman ? "h-full bg-success" : "h-full bg-warning"}
+                        style={{
+                          width: `${Math.min(100, (b.saldo / (posisi.ambangMenipis * 3)) * 100)}%`,
+                        }}
+                      />
+                    </div>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Ambang menipis: {kg(posisi.ambangMenipis)}
+                    </p>
+                  </CardContent>
+                </Card>
+              );
+            })}
       </div>
 
       <h2 className="mb-3 mt-8 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
         Stok Produk Jadi
       </h2>
       <div className="grid gap-4 md:grid-cols-2">
-        <StatCard label="Gula Kristal" value={kg(stok["Kristal"])} tone="success" hint="Produk utama" />
-        <StatCard label="Gula Brondol" value={kg(stok["Brondol"])} tone="warning" hint="Hasil sampingan" />
+        {(posisi?.produkJadi ?? []).map((p) => (
+          <StatCard
+            key={p.kode}
+            label={`Gula ${p.nama}`}
+            value={kg(p.saldo)}
+            tone={p.kode === "kristal" ? "success" : "warning"}
+            hint={p.kode === "kristal" ? "Produk utama" : "Hasil sampingan"}
+          />
+        ))}
       </div>
 
       <Card className="mt-8 overflow-hidden shadow-card">
@@ -182,8 +276,29 @@ function StokPage() {
           <div className="flex flex-wrap items-end gap-3 px-4">
             <SearchInput value={q} onChange={setQ} placeholder="Cari keterangan..." />
             <div className="space-y-1">
+              <Label className="text-xs">Dari Tanggal</Label>
+              <Input
+                type="date"
+                value={dari}
+                onChange={(e) => setDari(e.target.value)}
+                className="w-[160px]"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Sampai Tanggal</Label>
+              <Input
+                type="date"
+                value={sampai}
+                onChange={(e) => setSampai(e.target.value)}
+                className="w-[160px]"
+              />
+            </div>
+            <div className="space-y-1">
               <Label className="text-xs">Kategori</Label>
-              <Select value={fKategori} onValueChange={(v: "semua" | StokKategori) => setFKategori(v)}>
+              <Select
+                value={fKategori}
+                onValueChange={(v: "semua" | StokKategori) => setFKategori(v)}
+              >
                 <SelectTrigger className="w-[180px]">
                   <SelectValue />
                 </SelectTrigger>
@@ -199,7 +314,7 @@ function StokPage() {
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Jenis</Label>
-              <Select value={fJenis} onValueChange={(v: "semua" | "Masuk" | "Keluar") => setFJenis(v)}>
+              <Select value={fJenis} onValueChange={(v: "semua" | JenisMutasi) => setFJenis(v)}>
                 <SelectTrigger className="w-[140px]">
                   <SelectValue />
                 </SelectTrigger>
@@ -210,19 +325,73 @@ function StokPage() {
                 </SelectContent>
               </Select>
             </div>
+            {(dari || sampai || fKategori !== "semua" || fJenis !== "semua" || q) && (
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setDari("");
+                  setSampai("");
+                  setFKategori("semua");
+                  setFJenis("semua");
+                  setQ("");
+                }}
+              >
+                Reset filter
+              </Button>
+            )}
           </div>
-          <DataTable
-            rows={rows}
-            columns={cols}
-            rowKey={(r) => r.id}
-            initialSort={{ key: "tgl", dir: "desc" }}
-            empty={
-              <EmptyState
-                title="Kartu stok kosong"
-                description="Belum ada pergerakan stok yang cocok dengan filter."
+
+          {kartuError && (
+            <p className="px-4 text-sm text-destructive">
+              Gagal memuat kartu stok. Coba muat ulang halaman.
+            </p>
+          )}
+
+          {kartuLoading ? (
+            <LoadingRow />
+          ) : (
+            <>
+              <DataTable
+                rows={rows}
+                columns={cols}
+                rowKey={(r) => r.id}
+                empty={
+                  <EmptyState
+                    title="Kartu stok kosong"
+                    description="Belum ada pergerakan stok yang cocok dengan filter."
+                  />
+                }
               />
-            }
-          />
+              {meta && meta.total > 0 && (
+                <div className="flex flex-wrap items-center justify-between gap-3 px-4 text-sm text-muted-foreground">
+                  <span>
+                    Menampilkan {meta.from ?? 0}–{meta.to ?? 0} dari {angka(meta.total)} mutasi
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={meta.current_page <= 1}
+                      onClick={() => setPage((p) => p - 1)}
+                    >
+                      Sebelumnya
+                    </Button>
+                    <span>
+                      Halaman {meta.current_page} dari {meta.last_page}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={meta.current_page >= meta.last_page}
+                      onClick={() => setPage((p) => p + 1)}
+                    >
+                      Berikutnya
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
         </CardContent>
       </Card>
 
@@ -250,7 +419,7 @@ function StokPage() {
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                Stok sistem saat ini: {kg(stok[opname.kategori])}
+                Stok sistem saat ini: {kg(saldoSaatIni)}
               </p>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
@@ -293,7 +462,10 @@ function StokPage() {
             <Button variant="outline" onClick={() => setOpnameOpen(false)}>
               Batal
             </Button>
-            <Button onClick={simpanOpname}>Simpan Koreksi</Button>
+            <Button onClick={simpanOpname} disabled={stokOpname.isPending}>
+              {stokOpname.isPending && <Loader2 className="size-4 animate-spin" />}
+              Simpan Koreksi
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

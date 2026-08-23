@@ -1,0 +1,13 @@
+# Selalu pakai LF untuk file teks, terlepas dari core.autocrlf di mesin masing-masing
+# (fix untuk error eslint(prettier/prettier) "Delete CR" yang muncul di Windows).
+* text=auto eol=lf
+
+*.ico binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary

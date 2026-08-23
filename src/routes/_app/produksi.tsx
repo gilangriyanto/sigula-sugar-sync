@@ -1,15 +1,36 @@
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { CheckCircle2, Flame, Plus, Trash2 } from "lucide-react";
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import { CheckCircle2, Eye, Flame, Loader2, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import {
   DataTable,
   EmptyState,
@@ -18,9 +39,20 @@ import {
   StatCard,
   type Column,
 } from "@/components/sigula/ui-bits";
-import { addDays, angka, kg, tanggalPendek } from "@/lib/format";
-import { GRADES, type Grade, type SesiTungku } from "@/lib/sigula-types";
-import { useSigula } from "@/store/sigula-store";
+import { angka, kg, tanggalPendek } from "@/lib/format";
+import { GRADES, type Grade } from "@/lib/sigula-types";
+import { todayISO } from "@/lib/sigula-seed";
+import { ApiError } from "@/lib/api-client";
+import { getSesi, type SesiTungku, type StatusSesi } from "@/lib/api/produksi";
+import {
+  useBatalkanSesi,
+  useMulaiSesi,
+  useSelesaikanSesi,
+  useSesiList,
+  useTrenRendemen,
+} from "@/hooks/use-produksi";
+import { useKaryawanList } from "@/hooks/use-master-data";
+import { useStokPosisi } from "@/hooks/use-stok";
 
 export const Route = createFileRoute("/_app/produksi")({
   head: () => ({
@@ -32,152 +64,262 @@ export const Route = createFileRoute("/_app/produksi")({
           "Kelola sesi tungku dengan dua karyawan per tungku, catat hasil gula kristal & brondol, hitung rendemen, dan bagi hasil otomatis untuk penggajian.",
       },
       { property: "og:title", content: "Produksi Sesi Tungku — SIGULA" },
-      { property: "og:description", content: "Sesi tungku paralel, rendemen otomatis, dan pembagian hasil dua karyawan." },
+      {
+        property: "og:description",
+        content: "Sesi tungku paralel, rendemen otomatis, dan pembagian hasil dua karyawan.",
+      },
     ],
   }),
   component: ProduksiPage,
 });
 
-function rendemenOf(s: SesiTungku) {
-  if (s.kgKristal === null || s.kgBrondol === null || !s.kgBahan) return null;
-  return ((s.kgKristal + s.kgBrondol) / s.kgBahan) * 100;
+const PER_PAGE = 50;
+
+function apiErrorMessage(err: unknown, fallback: string): string {
+  return err instanceof ApiError ? (err.firstFieldError ?? err.message) : fallback;
 }
 
+function LoadingRow() {
+  return (
+    <div className="flex items-center justify-center gap-2 px-4 py-14 text-sm text-muted-foreground">
+      <Loader2 className="size-4 animate-spin" /> Memuat data…
+    </div>
+  );
+}
+
+/** Replikasi persis pembagian backend: porsi kedua = sisa, supaya jumlah 2 porsi selalu pas. */
+function bagiDua(total: number): [number, number] {
+  const pertama = Math.round((total / 2) * 100) / 100;
+  const kedua = Math.round((total - pertama) * 100) / 100;
+  return [pertama, kedua];
+}
+
+function namaKaryawanSesi(sesi: SesiTungku, index: 0 | 1): string {
+  return sesi.karyawan?.[index]?.nama ?? "-";
+}
+
+function StatusBadge({ status }: { status: StatusSesi }) {
+  return status === "Selesai" ? (
+    <Badge className="bg-success/15 text-success hover:bg-success/15">Selesai</Badge>
+  ) : (
+    <Badge className="bg-warning/25 text-warning-foreground hover:bg-warning/25">
+      Sedang Diproses
+    </Badge>
+  );
+}
+
+interface MulaiFormState {
+  tanggal: string;
+  kodeTungku: string;
+  grade: Grade;
+  kgBahan: string;
+  k1: string;
+  k2: string;
+}
+
+const emptyMulaiForm: MulaiFormState = {
+  tanggal: todayISO(),
+  kodeTungku: "",
+  grade: "NS 1",
+  kgBahan: "",
+  k1: "",
+  k2: "",
+};
+
 function ProduksiPage() {
-  const { state, stok, mulaiSesi, selesaikanSesi, deleteSesi, namaKaryawan, today } = useSigula();
+  // ---- Data referensi (karyawan, stok) --------------------------------------------
+  const { data: karyawanList = [] } = useKaryawanList();
+  const { data: posisi } = useStokPosisi();
 
-  const [openMulai, setOpenMulai] = useState(false);
-  const [selesai, setSelesai] = useState<SesiTungku | null>(null);
+  // ---- Filter & pagination ---------------------------------------------------
   const [q, setQ] = useState("");
+  const [qDebounced, setQDebounced] = useState("");
   const [fTanggal, setFTanggal] = useState("");
-  const [fStatus, setFStatus] = useState<"semua" | "Sedang Diproses" | "Selesai">("semua");
+  const [fStatus, setFStatus] = useState<"semua" | StatusSesi>("semua");
+  const [fGrade, setFGrade] = useState<"semua" | Grade>("semua");
+  const [fKaryawanId, setFKaryawanId] = useState("semua");
+  const [page, setPage] = useState(1);
 
-  const [form, setForm] = useState({
-    tanggal: today,
-    kodeTungku: "",
-    grade: "NS 1" as Grade,
-    kgBahan: "",
-    k1: "",
-    k2: "",
+  useEffect(() => {
+    const t = setTimeout(() => setQDebounced(q.trim()), 300);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [qDebounced, fTanggal, fStatus, fGrade, fKaryawanId]);
+
+  const {
+    data: listResult,
+    isLoading,
+    isError,
+  } = useSesiList({
+    tanggal: fTanggal || undefined,
+    status: fStatus === "semua" ? undefined : fStatus,
+    grade: fGrade === "semua" ? undefined : fGrade,
+    karyawanId: fKaryawanId === "semua" ? undefined : fKaryawanId,
+    q: qDebounced || undefined,
+    page,
+    perPage: PER_PAGE,
   });
+
+  const rows = listResult?.data ?? [];
+  const meta = listResult?.meta;
+  const ringkasan = listResult?.ringkasan;
+  const ringkasanHariIni = ringkasan?.tanggal === todayISO();
+  const filterAktif = Boolean(
+    fTanggal || fStatus !== "semua" || fGrade !== "semua" || fKaryawanId !== "semua" || q,
+  );
+
+  const resetFilter = () => {
+    setFTanggal("");
+    setFStatus("semua");
+    setFGrade("semua");
+    setFKaryawanId("semua");
+    setQ("");
+  };
+
+  const totalBahanTersedia = posisi ? posisi.totalBahanMentah : null;
+
+  // ---- Tren rendemen -------------------------------------------------------------
+  const { data: tren = [] } = useTrenRendemen(14);
+  const trenChart = tren.map((t) => ({
+    ...t,
+    label: tanggalPendek(t.tanggal).replace(/ \d{4}$/, ""),
+  }));
+
+  // ---- Mulai sesi ---------------------------------------------------------------
+  const mulaiSesi = useMulaiSesi();
+  const [openMulai, setOpenMulai] = useState(false);
+  const [form, setForm] = useState<MulaiFormState>(emptyMulaiForm);
   const [err, setErr] = useState<string | null>(null);
 
-  const [hasil, setHasil] = useState({ kristal: "", brondol: "" });
-  const [errHasil, setErrHasil] = useState<string | null>(null);
-
-  const sesiHariIni = state.sesi.filter((s) => s.tanggal === today);
-  const aktifHariIni = sesiHariIni.filter((s) => s.status === "Sedang Diproses").length;
-  const produksiHariIni = sesiHariIni.reduce((a, s) => a + (s.kgKristal ?? 0) + (s.kgBrondol ?? 0), 0);
-
-  const rows = useMemo(() => {
-    const term = q.trim().toLowerCase();
-    return state.sesi
-      .filter((s) => (fTanggal ? s.tanggal === fTanggal : true))
-      .filter((s) => (fStatus === "semua" ? true : s.status === fStatus))
-      .filter((s) =>
-        term
-          ? s.kodeTungku.toLowerCase().includes(term) ||
-            s.karyawanIds.some((k) => namaKaryawan(k).toLowerCase().includes(term))
-          : true,
-      )
-      .slice(0, 400);
-  }, [state.sesi, q, fTanggal, fStatus, namaKaryawan]);
-
-  const trenRendemen = useMemo(() => {
-    const out: { tanggal: string; rendemen: number }[] = [];
-    for (let i = 13; i >= 0; i--) {
-      const t = addDays(today, -i);
-      const rs = state.sesi.filter((s) => s.tanggal === t && s.status === "Selesai");
-      const bahan = rs.reduce((a, s) => a + s.kgBahan, 0);
-      const hasilKg = rs.reduce((a, s) => a + (s.kgKristal ?? 0) + (s.kgBrondol ?? 0), 0);
-      out.push({
-        tanggal: tanggalPendek(t).replace(/ \d{4}$/, ""),
-        rendemen: bahan ? Number(((hasilKg / bahan) * 100).toFixed(1)) : 0,
-      });
-    }
-    return out;
-  }, [state.sesi, today]);
-
   const bukaMulai = () => {
-    const kodeTerpakai = state.sesi.filter((s) => s.tanggal === today).length + 1;
-    setForm({
-      tanggal: today,
-      kodeTungku: `TGK-${String(kodeTerpakai).padStart(2, "0")}`,
-      grade: "NS 1",
-      kgBahan: "",
-      k1: "",
-      k2: "",
-    });
+    setForm(emptyMulaiForm);
     setErr(null);
     setOpenMulai(true);
   };
 
-  const simpanMulai = () => {
+  const simpanMulai = async () => {
     const kgNum = Number(form.kgBahan);
     if (!form.tanggal) return setErr("Tanggal wajib diisi.");
-    if (!form.kodeTungku.trim()) return setErr("Kode tungku wajib diisi.");
     if (!form.kgBahan.trim() || Number.isNaN(kgNum) || kgNum <= 0)
       return setErr("Kg bahan mentah harus lebih dari 0.");
-    if (kgNum > stok[form.grade])
-      return setErr(`Stok bahan ${form.grade} hanya ${angka(stok[form.grade])} kg.`);
     if (!form.k1 || !form.k2) return setErr("Kedua slot karyawan wajib diisi.");
-    if (form.k1 === form.k2) return setErr("Karyawan 1 dan Karyawan 2 tidak boleh orang yang sama.");
-    mulaiSesi({
-      tanggal: form.tanggal,
-      kodeTungku: form.kodeTungku.trim(),
-      grade: form.grade,
-      kgBahan: kgNum,
-      karyawanIds: [form.k1, form.k2],
-    });
-    toast.success("Sesi tungku dimulai", {
-      description: `${form.kodeTungku} — ${namaKaryawan(form.k1)} & ${namaKaryawan(form.k2)}`,
-    });
-    setOpenMulai(false);
+    if (form.k1 === form.k2)
+      return setErr("Karyawan 1 dan Karyawan 2 tidak boleh orang yang sama.");
+    try {
+      const res = await mulaiSesi.mutateAsync({
+        tanggal: form.tanggal,
+        kodeTungku: form.kodeTungku.trim() || undefined,
+        grade: form.grade,
+        kgBahan: kgNum,
+        karyawan1Id: form.k1,
+        karyawan2Id: form.k2,
+      });
+      toast.success(res.message, {
+        description: `${namaKaryawanSesi(res.sesi, 0)} & ${namaKaryawanSesi(res.sesi, 1)}`,
+      });
+      setOpenMulai(false);
+    } catch (e) {
+      setErr(apiErrorMessage(e, "Gagal memulai sesi tungku."));
+    }
   };
+
+  // ---- Selesaikan sesi ---------------------------------------------------------
+  const selesaikanSesi = useSelesaikanSesi();
+  const [selesai, setSelesai] = useState<SesiTungku | null>(null);
+  const [hasil, setHasil] = useState({ kristal: "", brondol: "" });
+  const [errHasil, setErrHasil] = useState<string | null>(null);
 
   const kgKristalNum = Number(hasil.kristal) || 0;
   const kgBrondolNum = Number(hasil.brondol) || 0;
-  const rendemenPreview = selesai?.kgBahan ? ((kgKristalNum + kgBrondolNum) / selesai.kgBahan) * 100 : 0;
+  const totalHasil = kgKristalNum + kgBrondolNum;
+  const rendemenPreview = selesai?.kgBahan ? (totalHasil / selesai.kgBahan) * 100 : 0;
+  const [bahan1, bahan2] = selesai ? bagiDua(selesai.kgBahan) : [0, 0];
+  const [kristal1, kristal2] = bagiDua(kgKristalNum);
+  const [brondol1, brondol2] = bagiDua(kgBrondolNum);
 
-  const simpanSelesai = () => {
-    if (!selesai) return;
-    if (!hasil.kristal.trim() && !hasil.brondol.trim()) return setErrHasil("Isi hasil produksi tungku ini.");
-    if (kgKristalNum < 0 || kgBrondolNum < 0) return setErrHasil("Nilai tidak boleh negatif.");
-    if (kgKristalNum + kgBrondolNum <= 0) return setErrHasil("Total hasil harus lebih dari 0.");
-    selesaikanSesi(selesai.id, kgKristalNum, kgBrondolNum);
-    toast.success(`Sesi ${selesai.kodeTungku} selesai`, {
-      description: `Rendemen ${rendemenPreview.toFixed(1)}% · masing-masing karyawan tercatat ${angka(
-        kgKristalNum / 2,
-      )} kg kristal & ${angka(kgBrondolNum / 2)} kg brondol`,
-    });
-    setSelesai(null);
+  const bukaSelesai = (sesi: SesiTungku) => {
+    setSelesai(sesi);
     setHasil({ kristal: "", brondol: "" });
     setErrHasil(null);
   };
 
+  const simpanSelesai = async () => {
+    if (!selesai) return;
+    if (!hasil.kristal.trim() && !hasil.brondol.trim())
+      return setErrHasil("Isi hasil produksi tungku ini (kristal dan/atau brondol).");
+    if (kgKristalNum < 0 || kgBrondolNum < 0) return setErrHasil("Nilai tidak boleh negatif.");
+    if (totalHasil <= 0) return setErrHasil("Total hasil harus lebih dari 0.");
+    if (totalHasil > selesai.kgBahan)
+      return setErrHasil(
+        `Total hasil (${angka(totalHasil)} kg) tidak boleh melebihi bahan mentah (${angka(selesai.kgBahan)} kg).`,
+      );
+    try {
+      const res = await selesaikanSesi.mutateAsync({
+        id: selesai.id,
+        payload: { kgKristal: kgKristalNum, kgBrondol: kgBrondolNum },
+      });
+      toast.success(res.message);
+      setSelesai(null);
+    } catch (e) {
+      setErrHasil(apiErrorMessage(e, "Gagal menyelesaikan sesi tungku."));
+    }
+  };
+
+  // ---- Detail sesi ---------------------------------------------------------------
+  const [detail, setDetail] = useState<SesiTungku | null>(null);
+  const [detailLoadingId, setDetailLoadingId] = useState<string | null>(null);
+
+  const lihatDetail = async (id: string) => {
+    setDetailLoadingId(id);
+    try {
+      const sesi = await getSesi(id);
+      setDetail(sesi);
+    } catch (e) {
+      toast.error(apiErrorMessage(e, "Gagal memuat detail sesi."));
+    } finally {
+      setDetailLoadingId(null);
+    }
+  };
+
+  // ---- Batalkan sesi ---------------------------------------------------------------
+  const batalkanSesi = useBatalkanSesi();
+  const [batalTarget, setBatalTarget] = useState<SesiTungku | null>(null);
+  const [alasanBatal, setAlasanBatal] = useState("");
+
+  const konfirmasiBatal = async () => {
+    if (!batalTarget) return;
+    try {
+      const res = await batalkanSesi.mutateAsync({
+        id: batalTarget.id,
+        alasan: alasanBatal.trim() || undefined,
+      });
+      toast.success(res.message, { description: batalTarget.kodeTungku });
+      setBatalTarget(null);
+      setAlasanBatal("");
+    } catch (e) {
+      toast.error(apiErrorMessage(e, "Gagal membatalkan sesi tungku."));
+    }
+  };
+
   const cols: Column<SesiTungku>[] = [
-    { key: "tgl", header: "Tanggal", sortValue: (r) => r.tanggal, cell: (r) => tanggalPendek(r.tanggal) },
+    { key: "tgl", header: "Tanggal", cell: (r) => tanggalPendek(r.tanggal) },
     {
       key: "kode",
       header: "Kode Tungku",
-      sortValue: (r) => r.kodeTungku,
       cell: (r) => <span className="font-medium">{r.kodeTungku}</span>,
     },
-    { key: "grade", header: "Grade", sortValue: (r) => r.grade, cell: (r) => <Badge variant="secondary">{r.grade}</Badge> },
-    {
-      key: "bahan",
-      header: "Kg Bahan",
-      align: "right",
-      sortValue: (r) => r.kgBahan,
-      cell: (r) => `${angka(r.kgBahan)} kg`,
-    },
+    { key: "grade", header: "Grade", cell: (r) => <Badge variant="secondary">{r.grade}</Badge> },
+    { key: "bahan", header: "Kg Bahan", align: "right", cell: (r) => `${angka(r.kgBahan)} kg` },
     {
       key: "kar",
       header: "Karyawan Bertugas",
       cell: (r) => (
         <div className="text-xs">
-          <p>{namaKaryawan(r.karyawanIds[0])}</p>
-          <p className="text-muted-foreground">{namaKaryawan(r.karyawanIds[1])}</p>
+          <p>{namaKaryawanSesi(r, 0)}</p>
+          <p className="text-muted-foreground">{namaKaryawanSesi(r, 1)}</p>
         </div>
       ),
     },
@@ -185,62 +327,53 @@ function ProduksiPage() {
       key: "kristal",
       header: "Kg Kristal",
       align: "right",
-      sortValue: (r) => r.kgKristal ?? -1,
       cell: (r) => (r.kgKristal === null ? "—" : `${angka(r.kgKristal)} kg`),
     },
     {
       key: "brondol",
       header: "Kg Brondol",
       align: "right",
-      sortValue: (r) => r.kgBrondol ?? -1,
       cell: (r) => (r.kgBrondol === null ? "—" : `${angka(r.kgBrondol)} kg`),
     },
     {
       key: "rend",
       header: "Rendemen",
       align: "right",
-      sortValue: (r) => rendemenOf(r) ?? -1,
-      cell: (r) => {
-        const v = rendemenOf(r);
-        return v === null ? "—" : <span className="font-medium">{v.toFixed(1)}%</span>;
-      },
-    },
-    {
-      key: "status",
-      header: "Status",
-      sortValue: (r) => r.status,
       cell: (r) =>
-        r.status === "Selesai" ? (
-          <Badge className="bg-success/15 text-success hover:bg-success/15">Selesai</Badge>
-        ) : (
-          <Badge className="bg-warning/25 text-warning-foreground hover:bg-warning/25">Sedang Diproses</Badge>
-        ),
+        r.rendemen === null ? "—" : <span className="font-medium">{r.rendemen.toFixed(1)}%</span>,
     },
+    { key: "status", header: "Status", cell: (r) => <StatusBadge status={r.status} /> },
     {
       key: "aksi",
       header: "Aksi",
       align: "right",
       cell: (r) => (
         <div className="flex justify-end gap-1">
-          {r.status === "Sedang Diproses" && (
-            <Button
-              size="sm"
-              onClick={() => {
-                setSelesai(r);
-                setHasil({ kristal: "", brondol: "" });
-                setErrHasil(null);
-              }}
-            >
+          {r.statusKode === "sedang_diproses" && (
+            <Button size="sm" onClick={() => bukaSelesai(r)}>
               <CheckCircle2 className="mr-1 size-4" /> Selesaikan
             </Button>
           )}
           <Button
             variant="ghost"
             size="icon"
-            aria-label="Hapus"
+            aria-label="Lihat detail"
+            disabled={detailLoadingId === r.id}
+            onClick={() => lihatDetail(r.id)}
+          >
+            {detailLoadingId === r.id ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Eye className="size-4" />
+            )}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Batalkan"
             onClick={() => {
-              deleteSesi(r.id);
-              toast.success("Sesi tungku dihapus", { description: r.kodeTungku });
+              setBatalTarget(r);
+              setAlasanBatal("");
             }}
           >
             <Trash2 className="size-4 text-destructive" />
@@ -264,17 +397,34 @@ function ProduksiPage() {
 
       <div className="grid gap-4 sm:grid-cols-3">
         <StatCard
-          label="Tungku Aktif Hari Ini"
-          value={`${aktifHariIni} tungku`}
+          label={
+            ringkasanHariIni
+              ? "Tungku Aktif Hari Ini"
+              : `Tungku Aktif — ${tanggalPendek(ringkasan?.tanggal ?? todayISO())}`
+          }
+          value={ringkasan ? `${ringkasan.tungkuAktif} tungku` : "…"}
           icon={<Flame className="size-5" />}
           tone="warning"
-          hint={`${sesiHariIni.length} sesi tercatat hari ini`}
+          hint={ringkasan ? `${ringkasan.jumlahSesi} sesi tercatat` : undefined}
         />
-        <StatCard label="Produksi Hari Ini" value={kg(produksiHariIni)} tone="success" />
+        <StatCard
+          label={ringkasanHariIni ? "Produksi Hari Ini" : "Produksi (tanggal terpilih)"}
+          value={ringkasan ? kg(ringkasan.totalProduksi) : "…"}
+          tone="success"
+          hint={
+            ringkasan?.rendemen !== null && ringkasan?.rendemen !== undefined
+              ? `Rendemen ${angka(ringkasan.rendemen, 1)}%`
+              : undefined
+          }
+        />
         <StatCard
           label="Stok Bahan Tersedia"
-          value={kg(stok["NS 1"] + stok["NS 2"] + stok["Kecap"])}
-          hint={`NS 1 ${angka(stok["NS 1"])} · NS 2 ${angka(stok["NS 2"])} · Kecap ${angka(stok["Kecap"])}`}
+          value={totalBahanTersedia !== null ? kg(totalBahanTersedia) : "…"}
+          hint={
+            posisi
+              ? `NS 1 ${angka(posisi.saldo["NS 1"])} · NS 2 ${angka(posisi.saldo["NS 2"])} · Kecap ${angka(posisi.saldo["Kecap"])}`
+              : undefined
+          }
         />
       </div>
 
@@ -284,10 +434,10 @@ function ProduksiPage() {
         </CardHeader>
         <CardContent className="h-[220px]">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={trenRendemen} margin={{ left: 8, right: 8 }}>
+            <LineChart data={trenChart} margin={{ left: 8, right: 8 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-              <XAxis dataKey="tanggal" tickLine={false} axisLine={false} fontSize={11} />
-              <YAxis domain={[80, 100]} tickLine={false} axisLine={false} fontSize={11} unit="%" />
+              <XAxis dataKey="label" tickLine={false} axisLine={false} fontSize={11} />
+              <YAxis domain={[0, 100]} tickLine={false} axisLine={false} fontSize={11} unit="%" />
               <Tooltip formatter={(v) => `${v}%`} />
               <Line
                 type="monotone"
@@ -320,7 +470,7 @@ function ProduksiPage() {
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Status</Label>
-              <Select value={fStatus} onValueChange={(v: typeof fStatus) => setFStatus(v)}>
+              <Select value={fStatus} onValueChange={(v: "semua" | StatusSesi) => setFStatus(v)}>
                 <SelectTrigger className="w-[180px]">
                   <SelectValue />
                 </SelectTrigger>
@@ -331,27 +481,104 @@ function ProduksiPage() {
                 </SelectContent>
               </Select>
             </div>
-            <Button variant="ghost" onClick={() => setFTanggal(today)}>
+            <div className="space-y-1">
+              <Label className="text-xs">Grade</Label>
+              <Select value={fGrade} onValueChange={(v: "semua" | Grade) => setFGrade(v)}>
+                <SelectTrigger className="w-[140px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="semua">Semua Grade</SelectItem>
+                  {GRADES.map((g) => (
+                    <SelectItem key={g} value={g}>
+                      {g}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Karyawan</Label>
+              <Select value={fKaryawanId} onValueChange={setFKaryawanId}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="semua">Semua Karyawan</SelectItem>
+                  {karyawanList.map((k) => (
+                    <SelectItem key={k.id} value={k.id}>
+                      {k.nama}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button variant="ghost" onClick={() => setFTanggal(todayISO())}>
               Lihat hari ini
             </Button>
+            {filterAktif && (
+              <Button variant="ghost" onClick={resetFilter}>
+                Reset filter
+              </Button>
+            )}
           </div>
-          <DataTable
-            rows={rows}
-            columns={cols}
-            rowKey={(r) => r.id}
-            initialSort={{ key: "tgl", dir: "desc" }}
-            empty={
-              <EmptyState
-                title="Belum ada sesi tungku"
-                description="Mulai sesi tungku baru untuk mencatat produksi."
-                action={
-                  <Button onClick={bukaMulai}>
-                    <Plus className="mr-2 size-4" /> Mulai Sesi Tungku Baru
-                  </Button>
+
+          {isError && (
+            <p className="px-4 text-sm text-destructive">
+              Gagal memuat data sesi tungku. Coba muat ulang halaman.
+            </p>
+          )}
+
+          {isLoading ? (
+            <LoadingRow />
+          ) : (
+            <>
+              <DataTable
+                rows={rows}
+                columns={cols}
+                rowKey={(r) => r.id}
+                empty={
+                  <EmptyState
+                    title="Belum ada sesi tungku"
+                    description="Mulai sesi tungku baru untuk mencatat produksi."
+                    action={
+                      <Button onClick={bukaMulai}>
+                        <Plus className="mr-2 size-4" /> Mulai Sesi Tungku Baru
+                      </Button>
+                    }
+                  />
                 }
               />
-            }
-          />
+              {meta && meta.total > 0 && (
+                <div className="flex flex-wrap items-center justify-between gap-3 px-4 text-sm text-muted-foreground">
+                  <span>
+                    Menampilkan {meta.from ?? 0}–{meta.to ?? 0} dari {angka(meta.total)} sesi
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={meta.current_page <= 1}
+                      onClick={() => setPage((p) => p - 1)}
+                    >
+                      Sebelumnya
+                    </Button>
+                    <span>
+                      Halaman {meta.current_page} dari {meta.last_page}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={meta.current_page >= meta.last_page}
+                      onClick={() => setPage((p) => p + 1)}
+                    >
+                      Berikutnya
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
         </CardContent>
       </Card>
 
@@ -372,24 +599,29 @@ function ProduksiPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Kode Tungku</Label>
+                <Label>Kode Tungku (opsional)</Label>
                 <Input
                   value={form.kodeTungku}
                   onChange={(e) => setForm({ ...form, kodeTungku: e.target.value })}
+                  placeholder="Kosongkan → otomatis TGK-01, TGK-02, …"
                 />
               </div>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label>Grade Bahan Mentah</Label>
-                <Select value={form.grade} onValueChange={(v: Grade) => setForm({ ...form, grade: v })}>
+                <Select
+                  value={form.grade}
+                  onValueChange={(v: Grade) => setForm({ ...form, grade: v })}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     {GRADES.map((g) => (
                       <SelectItem key={g} value={g}>
-                        {g} — stok {angka(stok[g])} kg
+                        {g}
+                        {posisi ? ` — stok ${angka(posisi.saldo[g])} kg` : ""}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -414,7 +646,7 @@ function ProduksiPage() {
                     <SelectValue placeholder="Pilih karyawan" />
                   </SelectTrigger>
                   <SelectContent>
-                    {state.karyawan.map((k) => (
+                    {karyawanList.map((k) => (
                       <SelectItem key={k.id} value={k.id} disabled={k.id === form.k2}>
                         {k.nama}
                       </SelectItem>
@@ -429,7 +661,7 @@ function ProduksiPage() {
                     <SelectValue placeholder="Pilih karyawan" />
                   </SelectTrigger>
                   <SelectContent>
-                    {state.karyawan.map((k) => (
+                    {karyawanList.map((k) => (
                       <SelectItem key={k.id} value={k.id} disabled={k.id === form.k1}>
                         {k.nama}
                       </SelectItem>
@@ -439,7 +671,8 @@ function ProduksiPage() {
               </div>
             </div>
             <p className="rounded-xl bg-cream px-4 py-3 text-xs text-muted-foreground">
-              Hasil produksi tungku ini nanti dibagi rata otomatis ke kedua karyawan untuk perhitungan gaji.
+              Hasil produksi tungku ini nanti dibagi rata otomatis ke kedua karyawan untuk
+              perhitungan gaji. Stok bahan mentah baru dipotong saat sesi ini diselesaikan.
             </p>
             {err && <p className="text-sm text-destructive">{err}</p>}
           </div>
@@ -447,7 +680,10 @@ function ProduksiPage() {
             <Button variant="outline" onClick={() => setOpenMulai(false)}>
               Batal
             </Button>
-            <Button onClick={simpanMulai}>Mulai Sesi</Button>
+            <Button onClick={simpanMulai} disabled={mulaiSesi.isPending}>
+              {mulaiSesi.isPending && <Loader2 className="size-4 animate-spin" />}
+              Mulai Sesi
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -466,7 +702,7 @@ function ProduksiPage() {
                   <span className="font-medium">{angka(selesai.kgBahan)} kg</span>
                 </p>
                 <p className="text-muted-foreground">
-                  Karyawan: {namaKaryawan(selesai.karyawanIds[0])} & {namaKaryawan(selesai.karyawanIds[1])}
+                  Karyawan: {namaKaryawanSesi(selesai, 0)} & {namaKaryawanSesi(selesai, 1)}
                 </p>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
@@ -492,19 +728,27 @@ function ProduksiPage() {
                 </div>
               </div>
               <div className="rounded-xl border bg-card px-4 py-3">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Rendemen otomatis</p>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                  Rendemen otomatis
+                </p>
                 <p className="text-2xl font-semibold">{rendemenPreview.toFixed(1)}%</p>
                 <p className="text-xs text-muted-foreground">
                   ({angka(kgKristalNum)} + {angka(kgBrondolNum)}) ÷ {angka(selesai.kgBahan)} × 100%
+                  — hasil tidak boleh melebihi bahan mentah
                 </p>
               </div>
               <div className="rounded-xl bg-secondary px-4 py-3 text-sm">
-                <p className="mb-1 font-medium">Pembagian otomatis per karyawan (bagi 2)</p>
-                <p className="text-muted-foreground">
-                  {namaKaryawan(selesai.karyawanIds[0])} & {namaKaryawan(selesai.karyawanIds[1])} — masing-masing{" "}
-                  {angka(selesai.kgBahan / 2)} kg bahan, {angka(kgKristalNum / 2)} kg kristal,{" "}
-                  {angka(kgBrondolNum / 2)} kg brondol
-                </p>
+                <p className="mb-1 font-medium">Pembagian otomatis per karyawan</p>
+                <div className="grid gap-1 text-muted-foreground">
+                  <p>
+                    {namaKaryawanSesi(selesai, 0)} — {angka(bahan1)} kg bahan, {angka(kristal1)} kg
+                    kristal, {angka(brondol1)} kg brondol
+                  </p>
+                  <p>
+                    {namaKaryawanSesi(selesai, 1)} — {angka(bahan2)} kg bahan, {angka(kristal2)} kg
+                    kristal, {angka(brondol2)} kg brondol
+                  </p>
+                </div>
               </div>
               {errHasil && <p className="text-sm text-destructive">{errHasil}</p>}
             </div>
@@ -513,7 +757,140 @@ function ProduksiPage() {
             <Button variant="outline" onClick={() => setSelesai(null)}>
               Batal
             </Button>
-            <Button onClick={simpanSelesai}>Simpan & Selesaikan</Button>
+            <Button onClick={simpanSelesai} disabled={selesaikanSesi.isPending}>
+              {selesaikanSesi.isPending && <Loader2 className="size-4 animate-spin" />}
+              Simpan & Selesaikan
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal detail sesi */}
+      <Dialog open={detail !== null} onOpenChange={(v) => !v && setDetail(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Detail Sesi {detail?.kodeTungku}</DialogTitle>
+          </DialogHeader>
+          {detail && (
+            <div className="space-y-4 text-sm">
+              <div className="grid grid-cols-2 gap-3 rounded-xl bg-cream px-4 py-3">
+                <div>
+                  <p className="text-xs text-muted-foreground">Tanggal</p>
+                  <p className="font-medium">{detail.tanggalLabel}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Status</p>
+                  <StatusBadge status={detail.status} />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Grade</p>
+                  <p className="font-medium">{detail.grade}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Kg Bahan</p>
+                  <p className="font-medium">{angka(detail.kgBahan)} kg</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Kg Kristal</p>
+                  <p className="font-medium">
+                    {detail.kgKristal === null ? "—" : `${angka(detail.kgKristal)} kg`}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Kg Brondol</p>
+                  <p className="font-medium">
+                    {detail.kgBrondol === null ? "—" : `${angka(detail.kgBrondol)} kg`}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Rendemen</p>
+                  <p className="font-medium">
+                    {detail.rendemen === null ? "—" : `${detail.rendemen.toFixed(1)}%`}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Selesai pada</p>
+                  <p className="font-medium">
+                    {detail.selesaiPada
+                      ? new Date(detail.selesaiPada).toLocaleString("id-ID")
+                      : "—"}
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <p className="mb-2 font-medium">Porsi Karyawan</p>
+                {detail.porsiKaryawan && detail.porsiKaryawan.length > 0 ? (
+                  <div className="space-y-2">
+                    {detail.porsiKaryawan.map((p, i) => (
+                      <div key={p.karyawanId} className="rounded-xl border px-4 py-3">
+                        <p className="font-medium">{namaKaryawanSesi(detail, i === 0 ? 0 : 1)}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {angka(p.kgBahan)} kg bahan · {angka(p.kgKristal)} kg kristal ·{" "}
+                          {angka(p.kgBrondol)} kg brondol
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Belum ada porsi — sesi ini belum diselesaikan.
+                  </p>
+                )}
+              </div>
+
+              {detail.catatan && (
+                <div>
+                  <p className="text-xs text-muted-foreground">Catatan</p>
+                  <p>{detail.catatan}</p>
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDetail(null)}>
+              Tutup
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal batalkan sesi */}
+      <Dialog open={batalTarget !== null} onOpenChange={(v) => !v && setBatalTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Batalkan Sesi Tungku</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Sesi <span className="font-medium text-foreground">{batalTarget?.kodeTungku}</span>{" "}
+              akan dibatalkan.
+              {batalTarget?.statusKode === "selesai"
+                ? " Sesi ini sudah selesai — efek stoknya (bahan kembali, kristal & brondol keluar) akan dibalik dan porsi karyawan dihapus."
+                : " Sesi ini masih berjalan, belum ada efek stok yang perlu dibalik."}{" "}
+              Tindakan ini tidak bisa dibatalkan.
+            </p>
+            <div className="space-y-2">
+              <Label>Alasan pembatalan (opsional)</Label>
+              <Textarea
+                value={alasanBatal}
+                onChange={(e) => setAlasanBatal(e.target.value)}
+                placeholder="Contoh: Salah input hasil masak"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBatalTarget(null)}>
+              Tutup
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={konfirmasiBatal}
+              disabled={batalkanSesi.isPending}
+            >
+              {batalkanSesi.isPending && <Loader2 className="size-4 animate-spin" />}
+              Ya, Batalkan
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
