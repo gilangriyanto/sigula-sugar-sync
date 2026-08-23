@@ -9,7 +9,9 @@
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "build:spa": "vite build --config vite.config.spa.ts",
+    "preview:spa": "vite preview --config vite.config.spa.ts --outDir dist-spa"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
