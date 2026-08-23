@@ -10,13 +10,13 @@ permanen, konsisten antar modul, dan bisa diaudit.
 | Auth | Laravel Sanctum (Bearer token), role-based |
 | Database | MySQL/MariaDB (production) · SQLite (dev & test) |
 | Base URL | `/api/v1` |
-| Test | 80 feature test, 418 assertion |
+| Test | 113 feature test, 602 assertion |
 
 Dokumentasi lain:
 - [`docs/API.md`](docs/API.md) — daftar endpoint, payload, dan contoh response
 - [`docs/INTEGRASI-FRONTEND.md`](docs/INTEGRASI-FRONTEND.md) — cara menyambungkan React yang sudah ada
 - [`docs/DEPLOY-VPS.md`](docs/DEPLOY-VPS.md) — panduan deploy ke VPS (Ubuntu + Nginx + MySQL + PHP 8.3)
-- [`docs/SIGULA.postman_collection.json`](docs/SIGULA.postman_collection.json) — koleksi Postman siap import (50 request)
+- [`docs/SIGULA.postman_collection.json`](docs/SIGULA.postman_collection.json) — koleksi Postman siap import (58 request)
 
 ### Import ke Postman
 
@@ -24,7 +24,7 @@ Dokumentasi lain:
    `docs/SIGULA.postman_environment.json` (ada juga varian `-production`).
 2. Pilih environment **SIGULA — Lokal** di pojok kanan atas.
 3. Jalankan **1. Autentikasi → Login**. Token otomatis tersimpan ke variable koleksi,
-   jadi 49 request lainnya langsung terautentikasi tanpa copy-paste token.
+   jadi 57 request lainnya langsung terautentikasi tanpa copy-paste token.
 
 Request bertanda ⭐ menyimpan id hasilnya (`petaniId`, `sesiId`, `penjualanId`, …) sehingga
 seluruh koleksi bisa dijalankan berurutan lewat **Collection Runner** sebagai smoke test —
@@ -97,12 +97,15 @@ app/
 │   ├── HargaService         master harga berversi
 │   ├── TarifService         master tarif berversi
 │   ├── LaporanService       laba rugi & tren bulanan
+│   ├── LaporanExportService penyusun isi file export (CSV/XLSX/PDF)
+│   ├── RingkasanAiService   ringkasan naratif laporan lewat Laravel AI SDK
 │   └── DashboardService     ringkasan operasional
 ├── Http/
 │   ├── Requests/   validasi input (payload camelCase, sama dengan frontend)
 │   ├── Resources/  bentuk response
 │   └── Controllers/Api/V1
-└── Support/        Periode (Senin-Jumat), TarifResolver
+├── Ai/             Agent Laravel AI SDK (RingkasanKeuanganAgent)
+└── Support/        Periode, TarifResolver, RentangPeriode, CsvExport, XlsxExport, PdfExport
 ```
 
 Controller sengaja dibuat tipis: memvalidasi, memanggil service, membungkus response.
@@ -148,6 +151,8 @@ mungkin ada mutasi setengah jadi.
 | Stok minus | Tidak pernah bisa terjadi — mutasi ditolak sebelum saldo tersimpan |
 | Nomor dokumen | Counter dikunci di database, tidak mungkin kembar walau request bersamaan |
 | Hapus master | Petani/eksportir bertransaksi tidak bisa dihapus; karyawan berhistori dinonaktifkan |
+| Export laporan | 3 format (CSV/XLSX/PDF) untuk 7 laporan; angka XLSX tersimpan sebagai angka asli; tiap export tercatat di audit log |
+| Ringkasan AI | Angka diambil dari transaksi lalu dikirim sebagai fakta di prompt — model tidak menghitung sendiri; provider (Claude/Gemini/dll) diganti lewat `AI_PROVIDER` tanpa ubah kode; hasil dicache 30 menit |
 
 ---
 
