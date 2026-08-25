@@ -1,7 +1,8 @@
-# Deploy Rilis 1.1.0 — Runbook
+# Deploy Rilis 1.1.0 — Runbook (Backend + Frontend)
 
-Rilis ini **mengubah database** (4 migrasi, dua di antaranya memindahkan data lama ke
-struktur baru), jadi urutannya berbeda dari deploy frontend biasa yang kemarin.
+Rilis ini mengubah **keduanya**: 50 file backend (termasuk 4 migrasi database, dua di
+antaranya memindahkan data lama ke struktur baru) dan 24 file frontend. Jadi urutannya
+berbeda dari deploy frontend biasa yang kemarin — migrasi dulu, baru build SPA.
 
 Jalankan perintah satu per satu dan baca hasilnya sebelum lanjut.
 
@@ -15,6 +16,9 @@ Jalankan perintah satu per satu dan baca hasilnya sebelum lanjut.
 ---
 
 ## Bagian A — Di laptop: kirim kode
+
+> Untuk rilis 1.1.0 langkah ini **sudah selesai**: commit `507167f` sudah ada di
+> `fork/backend`. Lompat ke Bagian B. Blok di bawah adalah acuan untuk rilis berikutnya.
 
 ### A1. Commit perubahan
 
@@ -38,6 +42,14 @@ Kalau remote `fork` belum ada di laptop:
 git remote add fork https://github.com/teddinata/sigula-sugar-sync.git
 git push fork HEAD:backend
 ```
+
+### A3. Pastikan sudah sampai
+
+```bash
+git fetch fork backend && git log --oneline fork/backend -1
+```
+
+Commit teratas harus sama dengan commit lokal kamu.
 
 ---
 
@@ -63,35 +75,40 @@ ls -lh storage/app/backups | tail -3
 
 Pastikan ada file baru bertanggal hari ini sebelum lanjut.
 
-### B3. Deploy otomatis (cara yang disarankan)
+### B3. Tarik kode
 
-Script deploy sudah diperbarui: maintenance mode → pull → composer → **backup** →
-migrasi → cache ulang → build SPA → reload PHP-FPM → online lagi.
-
-```bash
-cd /var/www/api.nirasarimurni.com
-sudo bash backend/deploy/deploy.sh --remote fork --branch backend
-```
-
-Kalau lancar, **lompat ke Bagian C**. Blok B4–B9 di bawah adalah versi manual dari
-langkah yang sama — pakai itu kalau script gagal di tengah jalan.
-
-### B4. Manual: tarik kode
+> ⚠️ **Tarik dari `fork`, bukan `origin`.** `origin` menunjuk ke repo gilangriyanto
+> yang belum punya commit rilis ini; `git pull origin main` akan menjawab "Already up
+> to date" dan kode barunya tidak pernah masuk.
 
 ```bash
 cd /var/www/api.nirasarimurni.com
 php backend/artisan down --retry=15
-git fetch fork backend && git merge --ff-only fork/backend
+git fetch fork backend
+git merge --ff-only fork/backend
+git log --oneline -1
 ```
 
-### B5. Manual: dependency PHP
+Commit teratas harus sama dengan yang dipush di langkah A3. Kalau `--ff-only` ditolak
+(riwayat server menyimpang), pakai `git merge fork/backend`.
+
+> **Kenapa `deploy.sh` tidak dipakai dari langkah pertama?** Opsi `--remote` baru ada
+> pada versi script yang ikut di commit ini — sebelum kode ditarik, script lama di
+> server belum mengenalnya. Untuk rilis **berikutnya**, setelah 1.1.0 terpasang, satu
+> perintah ini sudah cukup menggantikan B3–B9:
+>
+> ```bash
+> sudo bash backend/deploy/deploy.sh --remote fork --branch backend
+> ```
+
+### B5. Dependency PHP
 
 ```bash
 cd /var/www/api.nirasarimurni.com/backend
 COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --optimize-autoloader --no-interaction
 ```
 
-### B6. Manual: migrasi database
+### B6. Migrasi database
 
 ```bash
 php artisan migrate --force
@@ -115,7 +132,7 @@ php artisan tinker --execute="
 "
 ```
 
-### B7. Manual: cache ulang
+### B7. Cache ulang
 
 **Wajib** — `config/sigula.php` bertambah blok versi, dan config lama masih ter-cache.
 
@@ -125,7 +142,11 @@ php artisan optimize
 chown -R www-data:www-data storage bootstrap/cache
 ```
 
-### B8. Manual: build & pasang frontend
+### B8. Build & pasang frontend
+
+> Jangan jalankan `npm ci`: tidak ada dependency yang berubah di rilis ini, dan
+> `package-lock.json` repo ini tidak sinkron dengan `package.json` (soal `ajv` dari
+> eslint), sehingga `npm ci` bisa gagal. `npm run build:spa` sudah cukup.
 
 ```bash
 cd /var/www/api.nirasarimurni.com
@@ -139,7 +160,10 @@ cat .output/public/version.json
 `version.json` harus ada dan `buildId`-nya baru — file inilah yang memicu popup
 "versi baru tersedia" di browser pengguna.
 
-### B9. Manual: hidupkan lagi
+Nama file bundle (`assets/index-XXXX.js`) juga harus **berbeda** dari build sebelumnya.
+Kalau namanya masih sama persis, berarti kode belum berganti — ulangi B3.
+
+### B9. Hidupkan lagi
 
 ```bash
 systemctl reload php8.3-fpm
