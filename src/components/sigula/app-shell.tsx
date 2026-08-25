@@ -1,7 +1,6 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import {
-  BarChart3,
   Boxes,
   ChevronLeft,
   Factory,
@@ -18,6 +17,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/store/auth-store";
+import { VERSI_WEB } from "@/lib/versi";
 
 const MENU = [
   { key: "dashboard", to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -79,13 +79,21 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const brand = (
     <div className="flex items-center gap-3 border-b border-sidebar-border px-4 py-4">
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-sidebar-primary text-sidebar-primary-foreground">
-        <BarChart3 className="size-5" />
-      </span>
+      <img
+        src="/sigula-favicon-192.png"
+        alt="Logo SIGULA"
+        width={192}
+        height={192}
+        className="size-9 shrink-0 rounded-xl object-contain"
+      />
       {!collapsed && (
         <div className="min-w-0">
           <p className="truncate font-semibold leading-tight text-sidebar-foreground">SIGULA</p>
           <p className="truncate text-[11px] text-sidebar-foreground/60">PT Nira Sari Murni</p>
+          {/* Versi bundel yang sedang jalan — memudahkan memastikan user sudah update. */}
+          <p className="truncate text-[10px] tabular-nums text-sidebar-foreground/40">
+            v{VERSI_WEB}
+          </p>
         </div>
       )}
     </div>

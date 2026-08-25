@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { BarChart3, Loader2, Lock, Mail } from "lucide-react";
+import { Loader2, Lock, Mail } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -67,13 +67,15 @@ function LoginPage() {
 
       <div className="w-full max-w-md">
         <div className="mb-6 flex flex-col items-center text-center">
-          <span className="flex size-14 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-pop">
-            <BarChart3 className="size-7" />
-          </span>
-          <h1 className="mt-4 text-3xl font-bold tracking-tight">SIGULA</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Sistem Informasi Gula Terintegrasi — PT Nira Sari Murni
-          </p>
+          {/* Logo memuat nama sistem dan taglinenya, jadi tidak perlu judul teks lagi. */}
+          <img
+            src="/sigula-logo.png"
+            alt="SIGULA — Sistem Informasi Gula Terintegrasi"
+            width={1130}
+            height={356}
+            className="h-auto w-full max-w-[300px]"
+          />
+          <p className="mt-3 text-sm text-muted-foreground">PT Nira Sari Murni</p>
         </div>
 
         <form
