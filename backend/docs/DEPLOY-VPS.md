@@ -824,47 +824,126 @@ free -h
 
 ## 24. Deploy Frontend (opsional)
 
-Build di laptop:
+> **Penting:** frontend ini pakai **TanStack Start** (React, server-rendered
+> lewat Nitro) — hasil build-nya adalah **proses Node yang harus tetap hidup**,
+> bukan kumpulan file statis (`dist/` + `index.html`) seperti SPA biasa. Build
+> target sudah dikunci ke preset `node-server` di `vite.config.ts` (bukan
+> default Cloudflare Workers bawaan Lovable), jadi hasil build ini betul-betul
+> jalan sebagai server Node biasa — bukan Worker yang butuh runtime Cloudflare.
+>
+> Kalau sebelumnya deploy terasa lag/berat tanpa error di console browser,
+> kemungkinan besar penyebabnya di sini: build lama menyasar Cloudflare Workers
+> (`wrangler.json`, tidak ada folder `dist/` sama sekali), lalu dipaksa
+> disajikan seolah SPA statis atau dijalankan dengan runtime yang salah.
+
+### 24.1 Install Node.js di VPS (sekali saja)
+
+```bash
+curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+```
+
+```bash
+apt install -y nodejs
+```
+
+```bash
+node -v
+```
+
+Pastikan versi **22.x** ke atas.
+
+### 24.2 Install PM2 — process manager (sekali saja)
+
+```bash
+npm install -g pm2
+```
+
+### 24.3 Build di laptop
 
 ```bash
 cd /Users/mymac/projects/sigula-sugar-sync
 ```
 
 ```bash
-echo 'VITE_API_URL=https://api.nirasarimurni.com/api/v1' > .env.production
+echo 'VITE_API_BASE_URL=https://api.nirasarimurni.com/api/v1' > .env.production
 ```
 
 ```bash
 npm ci && npm run build
 ```
 
-Unggah ke server:
+Hasil build ada di folder **`.output/`** (bukan `dist/`): `.output/server/`
+berisi proses Node yang dijalankan (`index.mjs`), `.output/public/` berisi
+aset statis yang dilayani otomatis oleh proses itu sendiri.
+
+### 24.4 Unggah ke server
 
 ```bash
-scp -r dist/* ubuntu@IP_SERVER_KAMU:/tmp/frontend/
+scp -r .output ubuntu@IP_SERVER_KAMU:/tmp/frontend-output
 ```
 
 Di server:
 
 ```bash
-mkdir -p /var/www/frontend && mv /tmp/frontend/* /var/www/frontend/
+mkdir -p /var/www/frontend
 ```
+
+```bash
+rm -rf /var/www/frontend/*
+```
+
+```bash
+mv /tmp/frontend-output/.output/* /var/www/frontend/
+```
+
+### 24.5 Jalankan sebagai proses Node lewat PM2
+
+```bash
+cd /var/www/frontend
+```
+
+```bash
+pm2 start server/index.mjs --name sigula-frontend
+```
+
+```bash
+pm2 save
+```
+
+```bash
+pm2 startup
+```
+
+Perintah terakhir mencetak satu baris `sudo env PATH=...` — salin dan jalankan
+baris itu supaya PM2 otomatis start lagi setelah server reboot.
+
+Cek prosesnya benar-benar merespons (Nitro `node-server` default listen di
+port **3000**):
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:3000
+```
+
+Harus **200**. Kalau mau port lain: `PORT=4000 pm2 start server/index.mjs --name sigula-frontend`.
+
+### 24.6 Nginx sebagai reverse proxy (BUKAN static file server)
 
 ```bash
 cat > /etc/nginx/sites-available/frontend <<'NGINXWEB'
 server {
     listen 80;
     server_name nirasarimurni.com www.nirasarimurni.com;
-    root /var/www/frontend;
-    index index.html;
 
     location / {
-        try_files $uri $uri/ /index.html;
-    }
-
-    location ~* \.(js|css|png|jpg|jpeg|gif|svg|woff2?)$ {
-        expires 1y;
-        add_header Cache-Control "public, immutable";
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
     }
 }
 NGINXWEB
@@ -881,6 +960,16 @@ nginx -t && systemctl reload nginx
 ```bash
 certbot --nginx -d nirasarimurni.com -d www.nirasarimurni.com
 ```
+
+### 24.7 Update kode berikutnya (frontend)
+
+Ulangi langkah 24.3–24.4 di laptop, lalu di server:
+
+```bash
+pm2 reload sigula-frontend
+```
+
+---
 
 Pastikan domain frontend terdaftar di `FRONTEND_URL` pada `.env` backend, lalu
 `php artisan optimize`. Cara menyambungkan kodenya ada di

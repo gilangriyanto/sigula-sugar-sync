@@ -46,7 +46,7 @@ Perbedaan yang perlu diperhatikan:
 `.env` frontend:
 
 ```dotenv
-VITE_API_URL=http://localhost:8000/api/v1
+VITE_API_BASE_URL=http://localhost:8000/api/v1
 ```
 
 `.env` backend — daftarkan origin frontend agar lolos CORS:

@@ -12,4 +12,10 @@ export default defineConfig({
     // nitro/vite builds from this
     server: { entry: "server" },
   },
+  // Default nitro target is Cloudflare Workers (cloudflare-module) — wrong for our VPS,
+  // which runs a plain Node process behind Nginx. Only applies outside Lovable's own
+  // build pipeline (LOVABLE_NITRO_PRESET still wins there), so this is safe to hard-pin.
+  nitro: {
+    preset: "node-server",
+  },
 });
