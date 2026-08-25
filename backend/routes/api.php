@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\BiayaOperasionalController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\EksportirController;
+use App\Http\Controllers\Api\V1\ExportController;
 use App\Http\Controllers\Api\V1\KaryawanController;
 use App\Http\Controllers\Api\V1\LaporanController;
 use App\Http\Controllers\Api\V1\MasterHargaController;
@@ -70,6 +71,7 @@ Route::prefix('v1')->group(function (): void {
 
         // ---- Pembelian Bahan ---------------------------------------------
         Route::middleware('can:lihat-pembelian')->group(function (): void {
+            Route::get('pembelian/export', [ExportController::class, 'pembelian']);
             Route::get('pembelian', [PembelianController::class, 'index']);
             Route::get('pembelian/{pembelian}', [PembelianController::class, 'show']);
         });
@@ -82,11 +84,13 @@ Route::prefix('v1')->group(function (): void {
         Route::middleware('can:lihat-stok')->group(function (): void {
             Route::get('stok', [StokController::class, 'index']);
             Route::get('stok/kartu', [StokController::class, 'kartuStok']);
+            Route::get('stok/kartu/export', [ExportController::class, 'kartuStok']);
         });
         Route::post('stok/opname', [StokController::class, 'opname'])->middleware('can:kelola-stok');
 
         // ---- Produksi (Sesi Tungku) --------------------------------------
         Route::middleware('can:lihat-produksi')->group(function (): void {
+            Route::get('produksi/sesi/export', [ExportController::class, 'produksi']);
             Route::get('produksi/sesi', [SesiTungkuController::class, 'index']);
             Route::get('produksi/tren-rendemen', [SesiTungkuController::class, 'tren']);
             Route::get('produksi/sesi/{sesi}', [SesiTungkuController::class, 'show']);
@@ -99,6 +103,7 @@ Route::prefix('v1')->group(function (): void {
 
         // ---- Penggajian ---------------------------------------------------
         Route::middleware('can:lihat-penggajian')->group(function (): void {
+            Route::get('penggajian/export', [ExportController::class, 'penggajian']);
             Route::get('penggajian', [PenggajianController::class, 'index']);
             Route::get('penggajian/slip/{karyawan}', [PenggajianController::class, 'slip']);
         });
@@ -109,6 +114,7 @@ Route::prefix('v1')->group(function (): void {
 
         // ---- Penjualan ----------------------------------------------------
         Route::middleware('can:lihat-penjualan')->group(function (): void {
+            Route::get('penjualan/export', [ExportController::class, 'penjualan']);
             Route::get('penjualan', [PenjualanController::class, 'index']);
             Route::get('penjualan/{penjualan}', [PenjualanController::class, 'show']);
         });
@@ -122,7 +128,10 @@ Route::prefix('v1')->group(function (): void {
         Route::middleware('can:lihat-keuangan')->group(function (): void {
             Route::get('keuangan/laba-rugi', [LaporanController::class, 'labaRugi']);
             Route::get('keuangan/tren', [LaporanController::class, 'tren']);
+            Route::get('keuangan/ringkasan-ai', [LaporanController::class, 'ringkasanAi']);
             Route::get('keuangan/biaya', [BiayaOperasionalController::class, 'index']);
+            Route::get('keuangan/biaya/export', [ExportController::class, 'biaya']);
+            Route::get('keuangan/laba-rugi/export', [ExportController::class, 'labaRugi']);
             Route::get('audit-log', [AuditLogController::class, 'index']);
         });
         Route::middleware('can:kelola-keuangan')->group(function (): void {
